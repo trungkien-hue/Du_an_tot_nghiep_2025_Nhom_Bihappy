@@ -1,0 +1,391 @@
+.hero-wrap {
+  position: relative;
+  width: 100%;
+  height: 100vh; /* full viewport height */
+  background-image: url("/images/bg_5.jpg"); /* để ảnh trong public/images */
+  background-size: cover;
+  background-position: center center;
+  display: flex;
+  align-items: center;
+}
+.hero-wrap.hero-home {
+  position: relative;
+}
+.hero-wrap.hero-home::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+      to bottom,
+      rgba(4, 42, 25, 0.2),
+      rgba(5, 45, 1, 0.28)
+    ),
+    linear-gradient(to top, rgba(47, 30, 2, 0.06), rgba(36, 35, 35, 0));
+  z-index: 1;
+  pointer-events: none;
+}
+.hero-wrap.hero-home .container {
+  position: relative;
+  z-index: 2; /* đảm bảo chữ nằm trên overlay */
+}
+
+.hero-wrap.hero-home .hero-content h1,
+.hero-wrap.hero-home .hero-content p,
+.hero-wrap.hero-home .hero-content .subheading {
+  color: #fff; /* chữ trắng */
+}
+
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4); /* mờ overlay, không che nội dung */
+  z-index: 1;
+}
+
+.container {
+  position: relative;
+  z-index: 2; /* cao hơn overlay để hiển thị nội dung */
+}
+
+.slider-text {
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+
+.hero-content .subheading {
+  font-size: 18px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.hero-content h1 {
+  font-size: 48px;
+  color: #fff;
+  margin-bottom: 20px;
+}
+
+.hero-content p.caps {
+  text-transform: uppercase;
+  color: #fff;
+  font-size: 16px;
+}
+.project-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  cursor: pointer;
+}
+
+.project-wrap .img {
+  display: block;
+  width: 100%;
+  padding-top: 60%; /* giữ tỉ lệ hình */
+  background-size: cover;
+  background-position: center;
+  transition: transform 0.5s ease;
+  border-radius: 10px 10px 0 0;
+  position: relative;
+}
+
+.project-wrap .text {
+  padding: 15px;
+  background: #fff;
+  border-radius: 0 0 10px 10px;
+  transition: background 0.3s ease;
+}
+
+.project-wrap .price {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: rgba(255, 99, 71, 0.9);
+  color: #fff;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-weight: bold;
+  z-index: 2;
+  transition: transform 0.3s ease;
+}
+
+.project-wrap:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 15px 25px rgba(0, 0, 0, 0.2);
+}
+
+.project-wrap:hover .img {
+  transform: scale(1.1);
+}
+
+.project-wrap:hover .price {
+  transform: translateY(-10px);
+}
+
+.project-wrap .text h3 a {
+  color: #333;
+  transition: color 0.3s ease;
+}
+
+.project-wrap:hover .text h3 a {
+  color: #ff6347; /* đổi màu khi hover */
+}
+
+.project-wrap ul {
+  display: flex;
+  gap: 10px;
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0 0;
+}
+
+.project-wrap ul li {
+  background: #f0f0f0;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.project-wrap:hover ul li {
+  background: #ff6347;
+  color: #fff;
+}
+.service-item {
+  position: relative;
+  background-size: cover;
+  background-position: center;
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 40px 20px 20px 20px;
+  margin-bottom: 30px;
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
+  color: #fff;
+}
+
+.service-item .icon {
+  font-size: 40px;
+  width: 70px;
+  height: 70px;
+  line-height: 70px;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  margin-bottom: 20px;
+  transition: all 0.4s ease;
+}
+
+.service-item h3 {
+  color: #fff;
+  margin-bottom: 10px;
+  transition: color 0.4s ease;
+}
+
+.service-item p {
+  color: #f0f0f0;
+}
+
+.service-item::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.25);
+  transition: background 0.4s ease;
+  z-index: 1;
+}
+
+.service-item:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.service-item:hover::after {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.service-item:hover .icon {
+  background: #ff6347; /* màu nổi bật khi hover */
+  transform: scale(1.2) rotate(10deg);
+}
+
+.service-item:hover h3 {
+  color: #ff6347;
+}
+
+.service-item * {
+  position: relative;
+  z-index: 2;
+}
+.about-image {
+  position: relative;
+  border-radius: 15px;
+  overflow: hidden;
+  transition: transform 0.5s ease, box-shadow 0.5s ease;
+}
+
+.about-image::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0);
+  transition: background 0.5s ease;
+  border-radius: 15px;
+}
+
+.about-image:hover {
+  transform: scale(1.05); /* phóng to nhẹ */
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2); /* nổi bóng */
+}
+
+.about-image:hover::after {
+  background: rgba(0, 0, 0, 0.1); /* overlay mờ nhẹ */
+}
+.hero-wrap {
+  position: relative;
+  background-image: url("images/bg_5.jpg");
+  background-size: cover;
+  background-position: center;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+}
+
+.hero-wrap .overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.hero-content {
+  position: relative;
+  z-index: 2;
+  color: #fff;
+}
+
+/* Hover effect phóng to chữ */
+.hero-content span,
+.hero-content h1,
+.hero-content p {
+  transition: transform 0.3s ease, color 0.3s ease;
+}
+
+.hero-content span:hover,
+.hero-content h1:hover,
+.hero-content p:hover {
+  color: #ff6b6b;
+  transform: scale(1.1); /* phóng to 20% khi hover */
+}
+.nav-link.active {
+  color: #ff6b6b !important;
+  font-weight: bold;
+}
+/* ===== HERO VIDEO ===== */
+.hero-video {
+  position: relative;
+  width: 100%;
+  height: 100vh;             /* cao toàn màn hình; đổi 80vh nếu muốn thấp hơn */
+  overflow: hidden;
+  margin-bottom: 24px;        /* khoảng cách mặc định với section kế tiếp */
+  border-radius: 16px;
+}
+
+.hero-video__bg {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+.hero-video__overlay {
+  position: absolute; inset: 0;
+  background: rgba(0,0,0,.45);
+  pointer-events: none;       /* chặn click vào video */
+  z-index: 1;
+}
+
+/* Căn trái + dồn chữ xuống cuối */
+.hero-video__content {
+  position: relative; z-index: 2;
+  height: 100%;
+  display: flex; align-items: flex-end; /* đặt xuống cuối theo trục dọc */
+  padding-bottom: 120px;                /* đẩy khỏi mép dưới để không đè nút dưới */
+}
+
+.hero-video__inner {
+  width: min(1100px, 92vw);  /* giới hạn bề rộng để chữ không quá dài */
+  margin-left: clamp(16px, 6vw, 80px); /* căn trái đẹp */
+  text-align: left; color: #fff;
+}
+
+.hero-sub {
+  display: block;
+  font-size: clamp(12px, 1.2vw, 14px);
+  letter-spacing: 3px;
+  color: #ffdada;
+  margin-bottom: 10px;
+}
+
+.hero-title {
+  font-size: clamp(28px, 5vw, 64px);
+  line-height: 1.15;
+  font-weight: 800;
+  margin: 0 0 18px;
+  color: #ffffff;
+  text-shadow: 0 3px 24px rgba(0,0,0,.35);
+  transition: transform .25s ease, text-shadow .25s ease, color .25s ease;
+}
+
+.hero-desc {
+  font-size: clamp(14px, 1.8vw, 20px);
+  max-width: 720px;
+  opacity: .92;
+  margin-bottom: 28px;
+  transition: opacity .25s ease, transform .25s ease;
+}
+
+.hero-btn {
+  display: inline-block;
+  background: #ff6b6b;
+  color: #fff; font-weight: 700;
+  padding: 14px 34px; border-radius: 12px;
+  text-decoration: none;
+  box-shadow: 0 12px 28px rgba(255,107,107,.35);
+  transition: transform .2s ease, background .2s ease, box-shadow .2s ease;
+}
+.hero-btn:hover { background:#ff4b4b; transform: translateY(-2px);
+  box-shadow: 0 18px 38px rgba(255,107,107,.45); }
+
+/* ===== Hover effects cho chữ ===== */
+.hover-title:hover {
+  transform: translateY(-2px);
+  text-shadow: 0 10px 36px rgba(0,0,0,.45);
+}
+
+.hover-sub:hover {
+  letter-spacing: 4px;
+  color: #ffe1e1;
+}
+
+.hover-desc:hover {
+  opacity: 1;
+  transform: translateY(-1px);
+}
+
+/* ===== Tạo khoảng cách chống “dính” với section kế tiếp ===== */
+.after-hero { margin-top: 16px; }              /* tăng/giảm nếu cần */
+@media (max-width: 768px) {
+  .hero-video { height: 80vh; border-radius: 12px; }
+  .hero-video__content { padding-bottom: 80px; }
+}

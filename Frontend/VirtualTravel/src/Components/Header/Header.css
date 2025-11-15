@@ -1,0 +1,55 @@
+/* Navbar links */
+.navbar-nav .nav-link {
+  position: relative;
+  transition: color 0.3s ease, transform 0.3s ease;
+}
+
+/* Màu chữ và phóng to khi hover */
+.navbar-nav .nav-link:hover {
+  color: #ff6b6b;
+  transform: scale(1.05);
+}
+
+/* Underline trượt khi hover */
+.navbar-nav .nav-link::after {
+  content: "";
+  position: absolute;
+  width: 0;
+  height: 2px;
+  display: block;
+  margin-top: 5px;
+  right: 0;
+  background: #ff6b6b;
+  transition: width 0.3s ease;
+  -webkit-transition: width 0.3s ease;
+}
+
+.navbar-nav .nav-link:hover::after {
+  width: 100%;
+  left: 0;
+  background: #ff6b6b;
+}
+.brand-wrapper {
+  display: flex;
+  flex-direction: column; /* xếp theo cột */
+  align-items: center; /* căn giữa */
+  text-align: center;
+}
+
+.brand-wrapper .navbar-brand {
+  font-size: 20px;
+  font-weight: bold;
+  line-height: 1.2;
+}
+
+.brand-icon {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%; /* bo tròn */
+  object-fit: cover;
+  margin-top: 5px; /* cách chữ một chút */
+  border: 2px solid #fff; /* viền trắng đẹp */
+  position: relative;
+  top: -10px; /* đẩy xuống */
+  left: -10px; /* đẩy sang phải */
+}

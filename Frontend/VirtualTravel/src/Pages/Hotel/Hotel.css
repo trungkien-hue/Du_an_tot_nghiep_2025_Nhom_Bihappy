@@ -1,0 +1,204 @@
+.hero-wrap {
+  background-image: url("images/bg_1.jpg");
+  height: 700px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background-size: cover;
+  background-position: center;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+
+.hero-wrap::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(
+    0,
+    0,
+    0,
+    0.4
+  ); /* 0.4 là độ mờ, thay đổi để sáng hơn hoặc tối hơn */
+  z-index: 1;
+}
+
+.hero-wrap .container {
+  position: relative; /* để container nằm trên overlay */
+  z-index: 2;
+  padding-bottom: 40px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.breadcrumbs {
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.breadcrumbs a {
+  color: #fff;
+  text-decoration: none;
+}
+
+.breadcrumbs a:hover {
+  text-decoration: underline;
+}
+
+.bread {
+  color: #fff;
+  font-size: 48px;
+  font-weight: bold;
+  margin: 0;
+}
+.booking-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 16px;
+}
+
+.booking-modal .modal-content {
+  background: #fff;
+  padding: 20px;
+  border-radius: 8px;
+  width: 600px;
+  max-width: 100%;
+  max-height: 90%;
+  overflow-y: auto;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+
+/* Thêm media queries để xử lý responsive */
+@media (max-width: 992px) {
+  .hero-wrap {
+    height: 600px;
+  }
+}
+
+@media (max-width: 768px) {
+  .hero-wrap {
+    height: 500px;
+  }
+  .bread {
+    font-size: 36px;
+  }
+}
+
+@media (max-width: 576px) {
+  .hero-wrap {
+    height: 400px;
+  }
+  .bread {
+    font-size: 28px;
+  }
+}
+
+/* Animations cho sản phẩm */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* Hotel Cards Animation */
+.project-wrap {
+  transition: all 0.4s ease;
+  animation: fadeIn 0.8s ease-out, slideInUp 0.8s ease-out;
+  animation-fill-mode: both;
+}
+
+.project-wrap:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+}
+
+/* Staggered animation for hotel cards */
+.col-md-4:nth-child(1) .project-wrap {
+  animation-delay: 0.1s;
+}
+.col-md-4:nth-child(2) .project-wrap {
+  animation-delay: 0.2s;
+}
+.col-md-4:nth-child(3) .project-wrap {
+  animation-delay: 0.3s;
+}
+.col-md-4:nth-child(4) .project-wrap {
+  animation-delay: 0.4s;
+}
+.col-md-4:nth-child(5) .project-wrap {
+  animation-delay: 0.5s;
+}
+.col-md-4:nth-child(6) .project-wrap {
+  animation-delay: 0.6s;
+}
+
+/* Hotel Image Animation */
+.project-wrap .img {
+  overflow: hidden;
+  transition: all 0.4s ease;
+}
+
+.project-wrap:hover .img {
+  transform: scale(1.03);
+}
+
+/* Price Tag Animation */
+.price {
+  transition: all 0.3s ease;
+}
+
+.project-wrap:hover .price {
+  background-color: #28a745 !important;
+  animation: pulse 1s infinite;
+}
+
+/* Book Button Animation */
+.btn-success {
+  transition: all 0.3s ease;
+}
+
+.btn-success:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 10px rgba(40, 167, 69, 0.3);
+}

@@ -1,0 +1,55 @@
+/* HotelBooking.css */
+.booking-form-section {
+  background: #f8f9fa;
+  padding: 40px 0;
+}
+
+.booking-form-section h2 {
+  font-size: 28px;
+  font-weight: 700;
+  color: #333;
+}
+
+.booking-form .form-group {
+  margin-bottom: 20px;
+}
+
+.booking-form label {
+  font-weight: 600;
+  margin-bottom: 8px;
+  display: block;
+  color: #444;
+}
+
+.booking-form input,
+.booking-form textarea,
+.booking-form select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  font-size: 15px;
+  transition: all 0.3s ease;
+}
+
+.booking-form input:focus,
+.booking-form textarea:focus,
+.booking-form select:focus {
+  border-color: #007bff;
+  box-shadow: 0 0 5px rgba(0, 123, 255, 0.4);
+  outline: none;
+}
+
+.booking-form .btn-submit {
+  padding: 12px 30px;
+  font-size: 16px;
+  border-radius: 12px;
+  font-weight: 600;
+  background-color: #007bff;
+  border: none;
+  transition: all 0.3s ease;
+}
+
+.booking-form .btn-submit:hover {
+  background-color: #0056b3;
+}
