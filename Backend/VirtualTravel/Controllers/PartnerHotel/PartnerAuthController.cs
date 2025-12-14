@@ -6,6 +6,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using VirtualTravel.Data;
+using VirtualTravel.Models;
 
 namespace VirtualTravel.Controllers.PartnerHotel
 {
@@ -72,9 +73,22 @@ namespace VirtualTravel.Controllers.PartnerHotel
             );
 
             var jwt = new JwtSecurityTokenHandler().WriteToken(token);
-            return Ok(new { token = jwt, role = AppRoles.Hotel, hotelId = user.HotelID });
+            var hotel = await _db.Hotels
+         .AsNoTracking()
+         .FirstOrDefaultAsync(h => h.HotelID == user.HotelID, ct);
+
+                var hotelName = hotel?.Name ?? "Khách sạn";
+
+                return Ok(new
+                {
+                    token = jwt,
+                    role = AppRoles.Hotel,
+                    hotelId = user.HotelID,
+                    hotelName = hotelName
+                });
+
+            }
         }
-    }
 
     // LƯU Ý: AppRoles phải chỉ có 1 bản duy nhất trong toàn project
     public static class AppRoles

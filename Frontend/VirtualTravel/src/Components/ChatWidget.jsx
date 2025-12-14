@@ -1,12 +1,13 @@
-// src/Components/ChatWidget.jsx (hoặc đường dẫn bạn đang dùng)
+// src/Components/ChatWidget.jsx
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { chatTravel } from "../services/aiClient";
+import { chatTravel, saveCustomerInfo } from "../services/aiClient";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 const STORAGE_KEY = "vt_widget_history_v1";
 const DRAFT_KEY = "vt_widget_draft_v1";
+const CUSTOMER_INFO_KEY = "vt_widget_customer_info_v1";
 
 /* ========== Ảnh & Helpers ========== */
 const ASSET_BASE = import.meta.env.VITE_ASSET_BASE || "http://localhost:5059";
@@ -40,7 +41,10 @@ const safeLoad = (key, fallback) => {
 };
 const safeSave = (key, value) => {
   try {
-    localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+    localStorage.setItem(
+      key,
+      typeof value === "string" ? value : JSON.stringify(value)
+    );
   } catch (err) {
     console.warn("localStorage write error:", err);
   }
@@ -67,7 +71,10 @@ function TourCards({ items = [], onViewDetail }) {
         const id = getTourId(t) ?? `t-${idx}`;
         const img = resolveImageUrl(t.ImageUrl ?? t.ImageURL, DEFAULT_TOUR_IMG);
         return (
-          <div key={id} className="flex gap-2 rounded-xl border bg-white overflow-hidden shadow-sm">
+          <div
+            key={id}
+            className="flex gap-2 rounded-xl border bg-white overflow-hidden shadow-sm"
+          >
             <img
               src={img}
               alt={t.Name}
@@ -76,11 +83,17 @@ function TourCards({ items = [], onViewDetail }) {
               loading="lazy"
             />
             <div className="p-2 flex-1 min-w-0">
-              <div className="text-sm font-semibold line-clamp-2">{t.Name}</div>
+              <div className="text-sm font-semibold line-clamp-2">
+                {t.Name}
+              </div>
               <div className="text-[11px] text-gray-500">{t.Location}</div>
-              <div className="text-[12px] font-bold mt-0.5">{fmtVnd(t.Price)}</div>
+              <div className="text-[12px] font-bold mt-0.5">
+                {fmtVnd(t.Price)}
+              </div>
               {t.Rating != null && (
-                <div className="text-[11px] text-amber-600">⭐ {t.Rating}</div>
+                <div className="text-[11px] text-amber-600">
+                  ⭐ {t.Rating}
+                </div>
               )}
             </div>
             <button
@@ -104,9 +117,15 @@ function HotelCards({ list = [], onViewDetail }) {
       <div className="text-xs text-gray-400 text-center">Khách sạn gợi ý</div>
       {list.map((h, idx) => {
         const id = getHotelId(h) ?? `h-${idx}`;
-        const img = resolveImageUrl(h.ImageUrl ?? h.ImageURL, DEFAULT_HOTEL_IMG);
+        const img = resolveImageUrl(
+          h.ImageUrl ?? h.ImageURL,
+          DEFAULT_HOTEL_IMG
+        );
         return (
-          <div key={id} className="flex gap-2 rounded-xl border bg-white overflow-hidden shadow-sm">
+          <div
+            key={id}
+            className="flex gap-2 rounded-xl border bg-white overflow-hidden shadow-sm"
+          >
             <img
               src={img}
               alt={h.Name}
@@ -115,13 +134,17 @@ function HotelCards({ list = [], onViewDetail }) {
               loading="lazy"
             />
             <div className="p-2 flex-1 min-w-0">
-              <div className="text-sm font-semibold line-clamp-2">{h.Name}</div>
+              <div className="text-sm font-semibold line-clamp-2">
+                {h.Name}
+              </div>
               <div className="text-[11px] text-gray-500">{h.Location}</div>
               <div className="text-[12px] font-bold mt-0.5">
                 {fmtVnd(h.MinAvailablePrice ?? h.PricePerNight)}
               </div>
               {h.Rating != null && (
-                <div className="text-[11px] text-amber-600">⭐ {h.Rating}</div>
+                <div className="text-[11px] text-amber-600">
+                  ⭐ {h.Rating}
+                </div>
               )}
             </div>
             <button
@@ -135,6 +158,154 @@ function HotelCards({ list = [], onViewDetail }) {
         );
       })}
     </div>
+  );
+}
+
+/* --- Form thông tin khách hàng trong widget --- */
+function CustomerInfoFormWidget() {
+  const [form, setForm] = useState(() =>
+    safeLoad(CUSTOMER_INFO_KEY, {
+      fullName: "",
+      phone: "",
+      email: "",
+      people: "",
+      note: "",
+    })
+  );
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!form.fullName.trim() || !form.phone.trim()) {
+      alert("Vui lòng nhập tối thiểu Họ tên và Số điện thoại.");
+      return;
+    }
+
+    // Lưu localStorage để autofill form đặt phòng
+    safeSave(CUSTOMER_INFO_KEY, form);
+
+    // Gửi lên BE lưu User (Role = Lead)
+    setSaving(true);
+    try {
+      await saveCustomerInfo({
+        fullName: form.fullName,
+        phone: form.phone,
+        email: form.email,
+        people: form.people ? Number(form.people) : undefined,
+        note: form.note,
+        source: "AI_CHAT_WIDGET",
+      });
+      setSubmitted(true);
+    } catch (err) {
+      console.warn("saveCustomerInfo (widget) error:", err);
+      // vẫn cho submitted để user không phải nhập lại
+      setSubmitted(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="mt-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-2 py-1.5">
+        ✅ Cảm ơn bạn, mình đã lưu thông tin liên hệ. Bạn cứ tiếp tục chat để
+        mình tư vấn nhé.
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mt-2 space-y-2 text-xs bg-white rounded-xl border px-2.5 py-2"
+    >
+      <div className="grid grid-cols-1 gap-2">
+        <div>
+          <label className="block text-[11px] font-semibold mb-0.5">
+            Họ và tên <span className="text-red-500">*</span>
+          </label>
+          <input
+            name="fullName"
+            value={form.fullName}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="Nguyễn Văn A"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] font-semibold mb-0.5">
+            Số điện thoại <span className="text-red-500">*</span>
+          </label>
+          <input
+            name="phone"
+            value={form.phone}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="09xx xxx xxx"
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2">
+        <div>
+          <label className="block text-[11px] font-semibold mb-0.5">
+            Email
+          </label>
+          <input
+            name="email"
+            type="email"
+            value={form.email}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="(Không bắt buộc)"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] font-semibold mb-0.5">
+            Số khách (dự kiến)
+          </label>
+          <input
+            name="people"
+            type="number"
+            min="1"
+            value={form.people}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="Ví dụ: 2"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-[11px] font-semibold mb-0.5">
+          Ghi chú (thời gian đi, ngân sách, yêu cầu…)
+        </label>
+        <textarea
+          name="note"
+          rows={2}
+          value={form.note}
+          onChange={handleChange}
+          className="w-full border rounded-lg px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+          placeholder="Ví dụ: đi dịp lễ, ưu tiên gần biển, ngân sách ~5tr/2 người…"
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          disabled={saving}
+          className="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-60"
+        >
+          {saving ? "Đang lưu..." : "Lưu thông tin"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -157,6 +328,28 @@ export default function ChatWidget() {
   const boxRef = useRef(null);
   const navigate = useNavigate();
 
+  // 🔹 Sau khi mount: nếu chưa đăng nhập thì chèn thêm message hỏi thông tin KH
+  useEffect(() => {
+    const hasToken = !!localStorage.getItem("auth_token");
+    if (!hasToken) {
+      setMessages((prev) => {
+        const already = prev.some((m) => m?.kind === "customer-info");
+        if (already) return prev;
+        const msg = {
+          role: "bot",
+          text:
+            "Trước khi tư vấn chi tiết, bạn giúp mình điền nhanh thông tin liên hệ để tiện hỗ trợ nhé. " +
+            "Nếu bạn đã có tài khoản, bạn có thể đăng nhập để bỏ qua bước này.",
+          fn: "",
+          data: null,
+          ts: Date.now(),
+          kind: "customer-info",
+        };
+        return [...prev, msg];
+      });
+    }
+  }, []);
+
   // khôi phục draft
   useEffect(() => {
     const draft = safeLoad(DRAFT_KEY, "");
@@ -174,12 +367,15 @@ export default function ChatWidget() {
   // auto scroll (mượt)
   useEffect(() => {
     if (boxRef.current) {
-      boxRef.current.scrollTo({ top: boxRef.current.scrollHeight, behavior: "smooth" });
+      boxRef.current.scrollTo({
+        top: boxRef.current.scrollHeight,
+        behavior: "smooth",
+      });
     }
   }, [messages, open]);
 
   const clearHistory = () => {
-    const init = [
+    const base = [
       {
         role: "bot",
         text: "Xin chào! Mình có thể giúp bạn tìm tour/khách sạn theo yêu cầu.",
@@ -188,8 +384,23 @@ export default function ChatWidget() {
         ts: Date.now(),
       },
     ];
-    setMessages(init);
-    // nếu muốn giữ lại câu chào trong localStorage thì lưu init; nếu muốn xoá sạch thì remove
+    const hasToken = !!localStorage.getItem("auth_token");
+    let next = base;
+    if (!hasToken) {
+      next = [
+        ...base,
+        {
+          role: "bot",
+          text:
+            "Trước khi tư vấn chi tiết, bạn giúp mình điền nhanh thông tin liên hệ để tiện hỗ trợ nhé.",
+          fn: "",
+          data: null,
+          ts: Date.now(),
+          kind: "customer-info",
+        },
+      ];
+    }
+    setMessages(next);
     safeRemove(STORAGE_KEY);
     safeRemove(DRAFT_KEY);
   };
@@ -226,7 +437,10 @@ export default function ChatWidget() {
   const extractCards = (m) => {
     if (!m?.data) return { tours: [], hotels: [] };
     if (m.fn === "search_tours") {
-      return { tours: Array.isArray(m.data?.items) ? m.data.items : [], hotels: [] };
+      return {
+        tours: Array.isArray(m.data?.items) ? m.data.items : [],
+        hotels: [],
+      };
     }
     if (m.fn === "search_hotels") {
       const list = Array.isArray(m.data?.items)
@@ -255,7 +469,7 @@ export default function ChatWidget() {
 
       {/* Hộp chat */}
       {open && (
-        <div className="fixed bottom-24 right-6 z-[999] w-[360px] max-w-[92vw] rounded-2xl shadow-2xl border bg-white overflow-hidden">
+        <div className="fixed bottom-24 right-6 z-[999] w-[420px] max-w-[96vw] rounded-2xl shadow-2xl border bg-white overflow-hidden">
           {/* Header */}
           <div className="bg-blue-600 text-white px-4 py-3 flex items-center justify-between">
             <div>
@@ -289,9 +503,14 @@ export default function ChatWidget() {
               const key = m.ts ?? Math.random();
               const { tours, hotels } = extractCards(m);
               return (
-                <div key={key} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div
+                  key={key}
+                  className={`flex ${
+                    m.role === "user" ? "justify-end" : "justify-start"
+                  }`}
+                >
                   <div
-                    className={`max-w-[85%] rounded-2xl px-3 py-2 shadow-sm ${
+                    className={`max-w-[90%] rounded-2xl px-3 py-2 shadow-sm ${
                       m.role === "user"
                         ? "bg-blue-600 text-white rounded-br-none"
                         : "bg-white text-gray-800 border rounded-bl-none"
@@ -299,17 +518,26 @@ export default function ChatWidget() {
                   >
                     {m.role === "bot" ? (
                       <>
-                        <div className="prose prose-sm max-w-none">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {m.text || (loading ? "Đang gõ…" : "")}
-                          </ReactMarkdown>
-                        </div>
+                        {m.text && (
+                          <div className="prose prose-sm max-w-none">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {m.text || (loading ? "Đang gõ…" : "")}
+                            </ReactMarkdown>
+                          </div>
+                        )}
 
                         {!!tours.length && (
                           <TourCards items={tours} onViewDetail={goTourDetail} />
                         )}
                         {!!hotels.length && (
-                          <HotelCards list={hotels} onViewDetail={goHotelDetail} />
+                          <HotelCards
+                            list={hotels}
+                            onViewDetail={goHotelDetail}
+                          />
+                        )}
+
+                        {m.kind === "customer-info" && (
+                          <CustomerInfoFormWidget />
                         )}
                       </>
                     ) : (

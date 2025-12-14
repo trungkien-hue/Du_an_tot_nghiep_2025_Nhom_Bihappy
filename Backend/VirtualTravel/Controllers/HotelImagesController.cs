@@ -9,97 +9,173 @@ namespace VirtualTravel.Controllers
     [Route("api/hotels/{hotelId:int}/images")]
     public class HotelImagesController : ControllerBase
     {
-        private readonly IWebHostEnvironment _env;
         private readonly AppDbContext _db;
+        private readonly IWebHostEnvironment _env;
 
-        public HotelImagesController(IWebHostEnvironment env, AppDbContext db)
+        public HotelImagesController(AppDbContext db, IWebHostEnvironment env)
         {
-            _env = env; _db = db;
+            _db = db;
+            _env = env;
         }
 
-        // GET: /api/hotels/5/images
+        private static string WebPath(string p) => p.Replace("\\", "/");
+
+        private string GetDir(int hotelId)
+        {
+            return Path.Combine(_env.WebRootPath, "uploads", "hotels", hotelId.ToString());
+        }
+
+        // ===================== GET LIST IMAGES =====================
         [HttpGet]
-        public async Task<IActionResult> Get(int hotelId)
+        public async Task<IActionResult> GetImages(int hotelId)
         {
             var items = await _db.HotelImages
                 .Where(i => i.HotelID == hotelId && !i.IsDeleted)
-                .OrderBy(i => i.SortOrder).ThenBy(i => i.HotelImageID)
+                .OrderBy(i => i.SortOrder)
+                .Select(i => new
+                {
+                    i.HotelImageID,
+                    i.ImageUrl,
+                    i.IsPrimary,
+                    i.SortOrder
+                })
                 .ToListAsync();
+
             return Ok(items);
         }
 
-        // POST: multipart/form-data (files[])
+        // ===================== UPLOAD IMAGES =====================
         [HttpPost]
-        [RequestSizeLimit(50_000_000)]
-        public async Task<IActionResult> Upload(int hotelId, [FromForm] IFormFile[] files, [FromForm] string? tag)
+        [RequestSizeLimit(40_000_000)] // 40MB
+        public async Task<IActionResult> UploadImages(int hotelId, List<IFormFile> files)
         {
-            var hotel = await _db.Hotels.FindAsync(hotelId);
-            if (hotel == null) return NotFound("Hotel not found.");
+            if (files == null || files.Count == 0)
+                return BadRequest("No files uploaded.");
 
-            var baseDir = Path.Combine(_env.WebRootPath ?? "wwwroot", "uploads", "hotels", hotelId.ToString());
-            Directory.CreateDirectory(baseDir);
+            // Validate hotel exists
+            var hotelExists = await _db.Hotels.AnyAsync(h => h.HotelID == hotelId);
+            if (!hotelExists)
+                return NotFound("Hotel not found.");
 
-            var saved = new List<HotelImage>();
-            foreach (var f in files.Where(f => f?.Length > 0))
+            var dir = GetDir(hotelId);
+            Directory.CreateDirectory(dir);
+
+            // Get current max sort order
+            int maxSort = await _db.HotelImages
+                .Where(i => i.HotelID == hotelId)
+                .MaxAsync(i => (int?)i.SortOrder) ?? 0;
+
+            var saved = new List<object>();
+
+            foreach (var file in files)
             {
-                var fileName = $"{Guid.NewGuid():N}{Path.GetExtension(f.FileName)}";
-                var path = Path.Combine(baseDir, fileName);
-                await using (var fs = System.IO.File.Create(path))
-                    await f.CopyToAsync(fs);
+                if (file.Length <= 0) continue;
 
-                var rel = $"/uploads/hotels/{hotelId}/{fileName}";
-                var img = new HotelImage
+                // Validate file type
+                if (!file.ContentType.StartsWith("image/"))
+                    return BadRequest("Invalid image type.");
+
+                var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+                var name = $"{Guid.NewGuid():N}{ext}";
+                var full = Path.Combine(dir, name);
+
+                // Save file
+                using (var fs = System.IO.File.Create(full))
+                    await file.CopyToAsync(fs);
+
+                var relPath = "/uploads/hotels/" + hotelId + "/" + name;
+
+                var item = new HotelImage
                 {
                     HotelID = hotelId,
-                    ImageUrl = rel,
-                    Tag = tag,
-                    SortOrder = 9999
+                    ImageUrl = WebPath(relPath),
+                    IsPrimary = false,
+                    IsDeleted = false,
+                    SortOrder = ++maxSort
                 };
-                _db.HotelImages.Add(img);
-                saved.Add(img);
+
+                _db.HotelImages.Add(item);
+                saved.Add(new
+                {
+                    item.HotelImageID,
+                    item.ImageUrl,
+                    item.IsPrimary,
+                    item.SortOrder
+                });
             }
 
             await _db.SaveChangesAsync();
-            return Ok(saved.OrderBy(x => x.HotelImageID));
+            return Ok(saved);
         }
 
-        // PATCH: set primary (cover)
+        // ===================== DELETE IMAGE =====================
+        [HttpDelete("{imageId:int}")]
+        public async Task<IActionResult> DeleteImage(int hotelId, int imageId)
+        {
+            var item = await _db.HotelImages
+                .FirstOrDefaultAsync(i => i.HotelImageID == imageId && i.HotelID == hotelId);
+
+            if (item == null)
+                return NotFound("Image not found.");
+
+            item.IsDeleted = true;
+
+            // Delete actual file
+            try
+            {
+                var fullPath = Path.Combine(_env.WebRootPath, item.ImageUrl.TrimStart('/'));
+                if (System.IO.File.Exists(fullPath))
+                    System.IO.File.Delete(fullPath);
+            }
+            catch { /* ignore */ }
+
+            await _db.SaveChangesAsync();
+            return Ok(new { message = "Deleted" });
+        }
+
+        // ===================== SET PRIMARY IMAGE =====================
         [HttpPatch("{imageId:int}/primary")]
         public async Task<IActionResult> SetPrimary(int hotelId, int imageId)
         {
-            var imgs = await _db.HotelImages.Where(i => i.HotelID == hotelId).ToListAsync();
-            if (!imgs.Any()) return NotFound();
+            var items = await _db.HotelImages
+                .Where(i => i.HotelID == hotelId && !i.IsDeleted)
+                .ToListAsync();
 
-            foreach (var i in imgs) i.IsPrimary = (i.HotelImageID == imageId);
+            if (!items.Any()) return NotFound("No images.");
+
+            foreach (var i in items)
+                i.IsPrimary = (i.HotelImageID == imageId);
+
             await _db.SaveChangesAsync();
-            return NoContent();
+            return Ok(new { message = "Primary updated" });
         }
 
-        // PATCH: reorder
-        public record ReorderReq(int ImageId, int SortOrder);
+        // ===================== REORDER IMAGES =====================
+        public class ReorderDto
+        {
+            public int[] Order { get; set; } = Array.Empty<int>();
+        }
+
         [HttpPatch("reorder")]
-        public async Task<IActionResult> Reorder(int hotelId, [FromBody] List<ReorderReq> body)
+        public async Task<IActionResult> Reorder(int hotelId, [FromBody] ReorderDto dto)
         {
-            var ids = body.Select(b => b.ImageId).ToHashSet();
-            var imgs = await _db.HotelImages.Where(i => i.HotelID == hotelId && ids.Contains(i.HotelImageID)).ToListAsync();
-            foreach (var r in body)
-            {
-                var img = imgs.FirstOrDefault(x => x.HotelImageID == r.ImageId);
-                if (img != null) img.SortOrder = r.SortOrder;
-            }
-            await _db.SaveChangesAsync();
-            return NoContent();
-        }
+            if (dto.Order == null || dto.Order.Length == 0)
+                return BadRequest("Invalid order list.");
 
-        // DELETE: soft delete ảnh
-        [HttpDelete("{imageId:int}")]
-        public async Task<IActionResult> SoftDelete(int hotelId, int imageId)
-        {
-            var img = await _db.HotelImages.FirstOrDefaultAsync(i => i.HotelImageID == imageId && i.HotelID == hotelId);
-            if (img == null) return NotFound();
-            img.IsDeleted = true;
+            var items = await _db.HotelImages
+                .Where(i => i.HotelID == hotelId && !i.IsDeleted)
+                .ToListAsync();
+
+            int sort = 1;
+            foreach (var id in dto.Order)
+            {
+                var img = items.FirstOrDefault(i => i.HotelImageID == id);
+                if (img != null)
+                    img.SortOrder = sort++;
+            }
+
             await _db.SaveChangesAsync();
-            return NoContent();
+            return Ok(new { message = "Reordered" });
         }
     }
 }

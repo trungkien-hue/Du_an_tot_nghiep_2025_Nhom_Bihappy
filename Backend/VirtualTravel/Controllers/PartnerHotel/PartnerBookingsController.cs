@@ -1,5 +1,4 @@
-﻿// File: Controllers/Partner/PartnerBookingsController.cs
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -25,206 +24,255 @@ namespace VirtualTravel.Controllers.PartnerHotel
 
         private int CurrentHotelId => int.Parse(User.FindFirst("hotelId")!.Value);
 
-        // ======================== LIST & DETAIL ========================
 
+        // =====================================================================
+        // AUTO COMPLETE EXPIRED
+        // =====================================================================
+        private async Task AutoCompleteExpiredBookingsAsync(CancellationToken ct)
+        {
+            var now = DateTime.Now;
+
+            var candidates = await _db.Bookings
+                .Where(b =>
+                    !b.IsDeleted &&
+                    b.HotelID == CurrentHotelId &&
+                    b.Status == "Confirmed" &&
+                    b.CheckOutDate.HasValue)
+                .ToListAsync(ct);
+
+            foreach (var b in candidates)
+            {
+                var checkoutBoundary = b.CheckOutDate.Value.Date.AddHours(18);
+                if (now >= checkoutBoundary)
+                {
+                    b.Status = "Completed";
+                    _db.Bookings.Update(b);
+                }
+            }
+
+            await _db.SaveChangesAsync(ct);
+        }
+
+
+        // =====================================================================
+        // GET LIST
+        // =====================================================================
         [HttpGet]
         public async Task<IActionResult> GetMyBookings([FromQuery] int take = 50, CancellationToken ct = default)
         {
+            await AutoCompleteExpiredBookingsAsync(ct);
+
             take = take < 1 ? 50 : take > 200 ? 200 : take;
 
-            var q = _db.Bookings
-                .Where(b => !b.IsDeleted && b.HotelID == CurrentHotelId)
-                .OrderByDescending(b => b.BookingDate)
-                .Take(take);
+            var q =
+                from b in _db.Bookings.AsNoTracking()
+                where !b.IsDeleted && b.HotelID == CurrentHotelId
+                join rt in _db.RoomTypes.AsNoTracking()
+                    on b.RoomTypeID equals rt.RoomTypeID into roomTypeJoin
+                from rt in roomTypeJoin.DefaultIfEmpty()
+                orderby b.BookingDate descending
+                select new
+                {
+                    b.BookingID,
+                    b.FullName,
+                    b.Phone,
+                    b.Status,
+                    b.CheckInDate,
+                    b.CheckOutDate,
+                    b.Quantity,
+                    b.TotalPrice,
+                    b.RoomTypeID,
+                    RoomTypeName = rt != null ? rt.Name : null,
+                    b.HotelName,
+                    b.Location
+                };
 
-            var data = await q.ToListAsync(ct);
+            var data = await q.Take(take).ToListAsync(ct);
             return Ok(data);
         }
 
+
+        // =====================================================================
+        // GET ONE
+        // =====================================================================
         [HttpGet("{bookingId:int}")]
         public async Task<IActionResult> GetBooking(int bookingId, CancellationToken ct)
         {
+            await AutoCompleteExpiredBookingsAsync(ct);
+
             var b = await _db.Bookings
-                .FirstOrDefaultAsync(x => x.BookingID == bookingId && !x.IsDeleted && x.HotelID == CurrentHotelId, ct);
+                .FirstOrDefaultAsync(x =>
+                    x.BookingID == bookingId &&
+                    !x.IsDeleted &&
+                    x.HotelID == CurrentHotelId, ct);
 
             if (b == null) return NotFound();
             return Ok(b);
         }
 
-        // ======================== CONFIRM (ledger + tồn) ========================
 
-        [HttpPut("{bookingId:int}/confirm")]
-        public async Task<IActionResult> Confirm(int bookingId, CancellationToken ct)
+        // =====================================================================
+        // CONFIRM — ⭐ TRỪ TỒN KHO + BOOKING NIGHTS
+        // =====================================================================
+        [HttpPost("{bookingId:int}/confirm")]
+        public async Task<IActionResult> ConfirmBooking(int bookingId, CancellationToken ct)
         {
-            await using var tx = await _db.Database.BeginTransactionAsync(ct);
-
             var b = await _db.Bookings
-                .FirstOrDefaultAsync(x => x.BookingID == bookingId && !x.IsDeleted && x.HotelID == CurrentHotelId, ct);
+                .FirstOrDefaultAsync(x =>
+                    x.BookingID == bookingId &&
+                    !x.IsDeleted &&
+                    x.HotelID == CurrentHotelId, ct);
 
             if (b == null) return NotFound();
+
             if (b.Status is "Confirmed" or "Completed")
-                return BadRequest(new { message = "Đơn đã được xác nhận trước đó." });
+                return BadRequest("Đơn này đã được xác nhận hoặc đã hoàn tất.");
 
             try
             {
-                await CreateLedgerAndSubtractInventoryAsync(b, ct);
+                // ⭐ TRỪ TỒN KHO
+                await SubtractInventoryAsync(b, ct);
+
+                // ⭐ Partner chỉ chuyển sang Confirmed (đúng yêu cầu)
                 b.Status = "Confirmed";
 
+                _db.Bookings.Update(b);
                 await _db.SaveChangesAsync(ct);
-                await tx.CommitAsync(ct);
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                await tx.RollbackAsync(ct);
-                return Conflict(new { message = "Xác nhận đồng thời. Vui lòng thử lại." });
-            }
-            catch (InvalidOperationException ex)
-            {
-                await tx.RollbackAsync(ct);
-                return BadRequest(new { message = ex.Message });
-            }
 
-            return Ok(new { message = "Đã xác nhận đơn", bookingId = b.BookingID, status = b.Status });
+                return Ok(new { message = $"Đã xác nhận đơn #{bookingId}." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Xác nhận thất bại.", detail = ex.Message });
+            }
         }
 
-        // ======================== REJECT (trả đêm tương lai) ====================
 
-        [HttpPut("{bookingId:int}/reject")]
-        public async Task<IActionResult> Reject(int bookingId, [FromBody] string? reason, CancellationToken ct = default)
+        // =====================================================================
+        // MANUAL COMPLETE
+        // =====================================================================
+        [HttpPost("{bookingId:int}/complete")]
+        public async Task<IActionResult> CompleteBooking(int bookingId, CancellationToken ct)
         {
-            await using var tx = await _db.Database.BeginTransactionAsync(ct);
-
             var b = await _db.Bookings
-                .FirstOrDefaultAsync(x => x.BookingID == bookingId && !x.IsDeleted && x.HotelID == CurrentHotelId, ct);
+                .FirstOrDefaultAsync(x =>
+                    x.BookingID == bookingId &&
+                    !x.IsDeleted &&
+                    x.HotelID == CurrentHotelId, ct);
+
+            if (b == null)
+                return NotFound(new { message = "Không tìm thấy đơn." });
+
+            if (b.Status == "Completed")
+                return BadRequest(new { message = "Đơn đã hoàn tất trước đó." });
+
+            if (b.Status != "Confirmed")
+                return BadRequest(new { message = "Chỉ đơn ở trạng thái Confirmed mới có thể hoàn tất." });
+
+            try
+            {
+                b.Status = "Completed";
+                b.CheckedOutAt = DateTime.UtcNow;
+                _db.Bookings.Update(b);
+                await _db.SaveChangesAsync(ct);
+
+                return Ok(new { message = $"Đơn #{bookingId} đã được chuyển sang Completed." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Hoàn tất thất bại.", detail = ex.Message });
+            }
+        }
+
+
+        // =====================================================================
+        // REJECT — ⭐ TRẢ TỒN KHO
+        // =====================================================================
+        [HttpPost("{bookingId:int}/reject")]
+        public async Task<IActionResult> RejectBooking(int bookingId, [FromBody] string? reason, CancellationToken ct)
+        {
+            var b = await _db.Bookings
+                .FirstOrDefaultAsync(x =>
+                    x.BookingID == bookingId &&
+                    !x.IsDeleted &&
+                    x.HotelID == CurrentHotelId, ct);
 
             if (b == null) return NotFound();
 
             try
             {
+                // TRẢ TỒN KHO
                 if (b.Status is "Confirmed" or "Completed")
-                    await ReleaseFutureNightsAndReturnInventoryAsync(b, ct);
+                {
+                    await ReturnInventoryAsync(b, ct);
+                }
 
                 b.Status = "Rejected";
+
                 if (!string.IsNullOrWhiteSpace(reason))
                     b.Note = $"[Hotel reject] {reason}";
 
+                _db.Bookings.Update(b);
                 await _db.SaveChangesAsync(ct);
-                await tx.CommitAsync(ct);
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                await tx.RollbackAsync(ct);
-                return Conflict(new { message = "Từ chối đồng thời. Vui lòng thử lại." });
-            }
-            catch (InvalidOperationException ex)
-            {
-                await tx.RollbackAsync(ct);
-                return BadRequest(new { message = ex.Message });
-            }
 
-            return Ok(new { message = "Đã từ chối đơn", bookingId = b.BookingID, status = b.Status });
+                return Ok(new { message = $"Đã từ chối đơn #{bookingId}." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Từ chối thất bại.", detail = ex.Message });
+            }
         }
 
-        // ======================== HELPERS (ledger + inventory) ==================
+
+
+        // =====================================================================
+        // ⭐⭐ INVENTORY HELPERS (TRỪ / TRẢ TỒN)
+        // =====================================================================
 
         private static DateTime D(DateTime t) => t.Date;
 
-        private decimal GetLockedUnitPrice(Booking booking, DateTime night)
+        private async Task SubtractInventoryAsync(Booking booking, CancellationToken ct)
         {
-            if (booking?.Price is decimal p) return p;
-            return 0m;
-        }
-
-        private async Task SubtractAvailabilityAsync(int hotelId, int roomTypeId, DateTime nightDate, int qty, CancellationToken ct)
-        {
-            var totalRooms = await _db.RoomTypes
-                .Where(r => r.RoomTypeID == roomTypeId)
-                .Select(r => r.TotalRooms)
-                .FirstAsync(ct);
-
-            var avail = await _db.HotelAvailabilities.SingleOrDefaultAsync(x =>
-                x.HotelID == hotelId && x.RoomTypeID == roomTypeId && x.Date == nightDate, ct);
-
-            if (avail == null)
-            {
-                avail = new HotelAvailability
-                {
-                    HotelID = hotelId,
-                    RoomTypeID = roomTypeId,
-                    Date = nightDate,
-                    AvailableRooms = totalRooms,
-                    IsDeleted = false,
-                    Price = 0m
-                };
-                _db.HotelAvailabilities.Add(avail);
-                await _db.SaveChangesAsync(ct);
-            }
-
-            if (avail.AvailableRooms < qty)
-                throw new InvalidOperationException($"Ngày {nightDate:yyyy-MM-dd} chỉ còn {avail.AvailableRooms} phòng.");
-
-            avail.AvailableRooms -= qty;
-            _db.HotelAvailabilities.Update(avail);
-        }
-
-        private async Task AddAvailabilityAsync(int hotelId, int roomTypeId, DateTime nightDate, int qty, CancellationToken ct)
-        {
-            var totalRooms = await _db.RoomTypes
-                .Where(r => r.RoomTypeID == roomTypeId)
-                .Select(r => r.TotalRooms)
-                .FirstAsync(ct);
-
-            var avail = await _db.HotelAvailabilities.SingleOrDefaultAsync(x =>
-                x.HotelID == hotelId && x.RoomTypeID == roomTypeId && x.Date == nightDate, ct);
-
-            if (avail == null)
-            {
-                avail = new HotelAvailability
-                {
-                    HotelID = hotelId,
-                    RoomTypeID = roomTypeId,
-                    Date = nightDate,
-                    AvailableRooms = totalRooms,
-                    IsDeleted = false,
-                    Price = 0m
-                };
-                _db.HotelAvailabilities.Add(avail);
-                await _db.SaveChangesAsync(ct);
-            }
-
-            avail.AvailableRooms += qty;
-            _db.HotelAvailabilities.Update(avail);
-        }
-
-        private async Task CreateLedgerAndSubtractInventoryAsync(Booking booking, CancellationToken ct)
-        {
-            if (!booking.HotelID.HasValue || !booking.RoomTypeID.HasValue || booking.CheckInDate is null || booking.CheckOutDate is null)
+            if (!booking.HotelID.HasValue || !booking.RoomTypeID.HasValue)
                 return;
 
-            var hotelId = booking.HotelID!.Value;
-            var roomTypeId = booking.RoomTypeID!.Value;
+            var hotelId = booking.HotelID.Value;
+            var roomTypeId = booking.RoomTypeID.Value;
             var qty = booking.Quantity <= 0 ? 1 : booking.Quantity;
 
-            var ci = D(booking.CheckInDate.Value);
-            var co = D(booking.CheckOutDate.Value);
-            if (co < ci) throw new InvalidOperationException("Khoảng ngày CheckIn/CheckOut không hợp lệ.");
+            var ci = D(booking.CheckInDate!.Value);
+            var co = D(booking.CheckOutDate!.Value);
+            var end = (ci == co) ? ci.AddDays(1) : co;
 
-            bool isDayUse = co == ci;
-            var end = isDayUse ? ci.AddDays(1) : co;
-
-            for (var d = ci; d < end; d = d.AddDays(1))
+            for (var day = ci; day < end; day = day.AddDays(1))
             {
-                await SubtractAvailabilityAsync(hotelId, roomTypeId, d, qty, ct);
+                var avail = await _db.HotelAvailabilities
+                    .FirstOrDefaultAsync(x =>
+                        x.HotelID == hotelId &&
+                        x.RoomTypeID == roomTypeId &&
+                        x.Date == day, ct);
 
-                var exists = await _db.BookingNights.AnyAsync(x => x.BookingID == booking.BookingID && x.NightDate == d, ct);
+                if (avail == null)
+                    throw new InvalidOperationException($"Không tìm thấy tồn kho ngày {day:yyyy-MM-dd}");
+
+                if (avail.AvailableRooms < qty)
+                    throw new InvalidOperationException(
+                        $"Ngày {day:yyyy-MM-dd} chỉ còn {avail.AvailableRooms} phòng.");
+
+                avail.AvailableRooms -= qty;
+                _db.HotelAvailabilities.Update(avail);
+
+                bool exists = await _db.BookingNights
+                    .AnyAsync(x => x.BookingID == booking.BookingID && x.NightDate == day, ct);
+
                 if (!exists)
                 {
                     _db.BookingNights.Add(new BookingNight
                     {
                         BookingID = booking.BookingID,
-                        NightDate = d,
+                        NightDate = day,
                         Quantity = qty,
-                        UnitPrice = GetLockedUnitPrice(booking, d),
+                        UnitPrice = booking.Price ?? 0m,
                         State = "Held",
                         InventoryAdjusted = true
                     });
@@ -232,57 +280,36 @@ namespace VirtualTravel.Controllers.PartnerHotel
             }
         }
 
-        private async Task ReleaseFutureNightsAndReturnInventoryAsync(Booking booking, CancellationToken ct)
+        private async Task ReturnInventoryAsync(Booking booking, CancellationToken ct)
         {
-            if (!booking.HotelID.HasValue || !booking.RoomTypeID.HasValue || booking.CheckInDate is null || booking.CheckOutDate is null)
+            if (!booking.HotelID.HasValue || !booking.RoomTypeID.HasValue)
                 return;
 
-            var today = DateTime.UtcNow.Date;
+            var hotelId = booking.HotelID.Value;
+            var roomTypeId = booking.RoomTypeID.Value;
+            var qty = booking.Quantity <= 0 ? 1 : booking.Quantity;
 
-            var pastHeld = await _db.BookingNights
-                .Where(x => x.BookingID == booking.BookingID && x.NightDate < today && x.State == "Held")
+            var nights = await _db.BookingNights
+                .Where(n => n.BookingID == booking.BookingID && n.InventoryAdjusted)
                 .ToListAsync(ct);
 
-            foreach (var n in pastHeld)
+            foreach (var n in nights)
             {
-                n.State = "Consumed";
-                n.ConsumedAt = DateTime.UtcNow;
+                var avail = await _db.HotelAvailabilities
+                    .FirstOrDefaultAsync(x =>
+                        x.HotelID == hotelId &&
+                        x.RoomTypeID == roomTypeId &&
+                        x.Date == n.NightDate, ct);
+
+                if (avail != null)
+                {
+                    avail.AvailableRooms += qty;
+                    _db.HotelAvailabilities.Update(avail);
+                }
+
+                n.State = "Released";
+                n.ReleasedAt = DateTime.UtcNow;
                 _db.BookingNights.Update(n);
-            }
-
-            var futureHeld = await _db.BookingNights
-                .Where(x => x.BookingID == booking.BookingID && x.NightDate >= today && x.State == "Held")
-                .OrderBy(x => x.NightDate)
-                .ToListAsync(ct);
-
-            int penaltyNights = futureHeld.Any() ? 1 : 0;
-
-            for (int i = 0; i < futureHeld.Count; i++)
-            {
-                var n = futureHeld[i];
-                if (i < penaltyNights)
-                {
-                    n.State = "Penalized";
-                    n.PenalizedAt = DateTime.UtcNow;
-                    n.PenaltyAmount = n.UnitPrice * n.Quantity;
-
-                    if (n.InventoryAdjusted)
-                        await AddAvailabilityAsync(booking.HotelID!.Value, booking.RoomTypeID!.Value, n.NightDate, n.Quantity, ct);
-
-                    n.InventoryAdjusted = true;
-                    _db.BookingNights.Update(n);
-                }
-                else
-                {
-                    n.State = "Released";
-                    n.ReleasedAt = DateTime.UtcNow;
-
-                    if (n.InventoryAdjusted)
-                        await AddAvailabilityAsync(booking.HotelID!.Value, booking.RoomTypeID!.Value, n.NightDate, n.Quantity, ct);
-
-                    n.InventoryAdjusted = true;
-                    _db.BookingNights.Update(n);
-                }
             }
         }
     }

@@ -47,28 +47,42 @@ function getCreatedStamp(hotel) {
 function sortByNewest(arr) {
   return [...arr].sort((a, b) => getCreatedStamp(b) - getCreatedStamp(a));
 }
-/** Giá hiển thị: ưu tiên MinPrice → PricePerNight → Price → rẻ nhất từ RoomTypes/Availabilities */
 function getDisplayPrice(h) {
+  // Ưu tiên lấy giá từ backend mới (GET /api/hotels)
   const direct =
-    h.MinPrice ?? h.minPrice ?? h.PricePerNight ?? h.pricePerNight ?? h.Price ?? h.price;
-  if (direct != null && Number.isFinite(Number(direct))) return Number(direct);
+    h.Price ??           // NEW backend field (recommended)
+    h.MinPrice ?? 
+    h.minPrice ??
+    h.PricePerNight ??
+    h.pricePerNight ??
+    h.price;
 
+  if (direct != null && Number.isFinite(Number(direct))) {
+    return Number(direct);
+  }
+
+  // Nếu backend chưa trả giá trực tiếp → fallback room types
   const rt = Array.isArray(h.RoomTypes) ? h.RoomTypes : [];
   let best = Number.POSITIVE_INFINITY;
+
   for (const r of rt) {
+    // Nếu RoomType có Availabilities → tìm giá nhỏ nhất
     const av = Array.isArray(r.Availabilities) ? r.Availabilities : [];
-    if (av.length) {
+    if (av.length > 0) {
       for (const a of av) {
         const p = Number(a?.Price);
         if (Number.isFinite(p) && p < best) best = p;
       }
     } else {
+      // Nếu RoomType chỉ có Price (không có Availabilities)
       const p = Number(r?.Price);
       if (Number.isFinite(p) && p < best) best = p;
     }
   }
+
   return Number.isFinite(best) ? best : undefined;
 }
+
 /* 🆕 Tính tổng số phòng còn trống (daily): cộng theo mọi bản ghi có Date */
 function getTotalAvailableRooms(hotel) {
   const rts = Array.isArray(hotel?.RoomTypes) ? hotel.RoomTypes : [];
@@ -150,28 +164,28 @@ export default function Hotel() {
       setTimeout(() => setNotice({ text: "", type }), autoCloseMs);
     }
   };
+useEffect(() => {
+  setLoading(true);
 
-  useEffect(() => {
-    hotelService
-      .getAll()
-      .then((data) => {
-        const list = Array.isArray(data) ? data : data?.$values ?? [];
-        const hotelsWithAvailability = list.map((hotel) => ({
-          ...hotel,
-          isAvailableForSearch: true,
-          _precalcTotalRooms: getTotalAvailableRooms(hotel),
-        }));
-        const sorted = sortByNewest(hotelsWithAvailability);
-        setHotels(sorted);
-        setFilteredHotels(sorted);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Lỗi tải dữ liệu khách sạn:", err);
-        setError(err);
-        setLoading(false);
-      });
-  }, []);
+  hotelService
+    .getSummary({ page: 1, pageSize: 200 })
+    .then((res) => {
+      const list = res?.items ?? [];
+
+      // Vẫn giữ nguyên HeroHotelSlider (vì cần list đầy đủ)
+      setHotels(list);
+
+      // Dùng luôn cho filteredHotels
+      setFilteredHotels(list);
+
+      setLoading(false);
+    })
+    .catch((err) => {
+      console.error("Lỗi tải danh sách khách sạn:", err);
+      setError(err);
+      setLoading(false);
+    });
+}, []);
 
   const handleChange = (e) => {
     const { name, value, type } = e.target;

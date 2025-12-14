@@ -17,7 +17,10 @@ function getJwt() {
     try {
       const packed = pick("auth");
       raw = packed ? JSON.parse(packed)?.token || "" : "";
-    } catch(e) {e}
+    } catch (e) {
+      void e;
+      // ignore
+    }
   }
   return raw.replace(/^Bearer\s+/i, "");
 }
@@ -80,37 +83,71 @@ function normalizeEvent(src) {
   };
 }
 
+/** Badge loại thông báo – mới, cập nhật, hủy… */
 function TypeBadge({ type }) {
   const base =
-    "inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium";
+    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium";
   const map = {
-    BookingCreated: "bg-blue-100 text-blue-700",
-    BookingUpdated: "bg-amber-100 text-amber-700",
-    BookingCancelled: "bg-rose-100 text-rose-700", // ✅ mới
-    PartnerOffline: "bg-red-100 text-red-700",
-    Notification: "bg-gray-100 text-gray-700",
+    BookingCreated: {
+      cls: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100",
+      label: "Đơn mới",
+      icon: "🆕",
+    },
+    BookingUpdated: {
+      cls: "bg-amber-50 text-amber-700 ring-1 ring-amber-100",
+      label: "Đơn cập nhật",
+      icon: "✏️",
+    },
+    BookingCancelled: {
+      cls: "bg-rose-50 text-rose-700 ring-1 ring-rose-100",
+      label: "Đơn hủy",
+      icon: "❌",
+    },
+    PartnerOffline: {
+      cls: "bg-red-50 text-red-700 ring-1 ring-red-100",
+      label: "Kênh offline",
+      icon: "⚠️",
+    },
+    Notification: {
+      cls: "bg-gray-100 text-gray-700 ring-1 ring-gray-200",
+      label: "Thông báo",
+      icon: "🔔",
+    },
   };
+
+  const conf = map[type] || map.Notification;
   return (
-    <span className={`${base} ${map[type] || map.Notification}`}>{type}</span>
+    <span className={`${base} ${conf.cls}`}>
+      <span className="text-xs">{conf.icon}</span>
+      <span>{conf.label}</span>
+    </span>
   );
 }
 
+/** Card chi tiết đơn đặt trong thông báo */
 function BookingCard({ ev }) {
   const p = ev.raw || {};
   const stay = p.stay || {};
   const customer = p.customer || {};
   const prices = p.prices || {};
+
   return (
-    <div className="space-y-2">
-      <div className="text-sm text-gray-700">{ev.message}</div>
-      <div className="grid md:grid-cols-3 gap-2 text-sm">
-        <div className="bg-gray-50 rounded-lg p-2">
-          <div className="text-gray-500">Khách</div>
-          <div className="font-medium">{customer?.name || "—"}</div>
-          <div className="text-gray-500">{customer?.phone || ""}</div>
+    <div className="mt-3 grid gap-3 md:grid-cols-3 text-xs md:text-sm">
+      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+        <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
+          Khách
         </div>
-        <div className="bg-gray-50 rounded-lg p-2">
-          <div className="text-gray-500">Lưu trú</div>
+        <div className="font-semibold text-slate-900">
+          {customer?.name || "—"}
+        </div>
+        <div className="text-slate-500 mt-0.5">{customer?.phone || ""}</div>
+      </div>
+
+      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+        <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
+          Lưu trú
+        </div>
+        <div className="space-y-0.5">
           <div>
             Nhận phòng:{" "}
             <span className="font-medium">
@@ -128,17 +165,28 @@ function BookingCard({ ev }) {
             </span>
           </div>
           <div>
-            SL phòng: <span className="font-medium">{stay?.quantity ?? "—"}</span>
+            SL phòng:{" "}
+            <span className="font-medium">{stay?.quantity ?? "—"}</span>
           </div>
         </div>
-        <div className="bg-gray-50 rounded-lg p-2">
-          <div className="text-gray-500">Giá</div>
+      </div>
+
+      <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+        <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
+          Giá & tổng tiền
+        </div>
+        <div className="space-y-0.5">
           <div>
             Đ/đêm:{" "}
-            <span className="font-medium">{fmtVND(prices?.pricePerNight)}₫</span>
+            <span className="font-medium">
+              {fmtVND(prices?.pricePerNight)}₫
+            </span>
           </div>
           <div>
-            Tổng: <span className="font-semibold">{fmtVND(prices?.total)}₫</span>
+            Tổng:{" "}
+            <span className="font-semibold text-emerald-700">
+              {fmtVND(prices?.total)}₫
+            </span>
           </div>
         </div>
       </div>
@@ -153,11 +201,15 @@ export default function PartnerNotifications() {
   const [actBusy, setActBusy] = useState(false);
   const connRef = useRef(null);
 
+  // Load cache + load API lần đầu
   useEffect(() => {
     try {
       const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || "[]");
       if (Array.isArray(cached) && cached.length) setEvents(cached);
-    } catch(e) {e}
+    } catch (e) {
+      void e;
+      // ignore
+    }
 
     (async () => {
       try {
@@ -168,7 +220,9 @@ export default function PartnerNotifications() {
         );
         if (res.ok) {
           const data = await res.json();
-          const normalized = (Array.isArray(data) ? data : []).map(normalizeEvent);
+          const normalized = (Array.isArray(data) ? data : []).map(
+            normalizeEvent
+          );
           setEvents((prev) => mergeAndLimit(normalized, prev));
         }
       } catch (e) {
@@ -177,6 +231,7 @@ export default function PartnerNotifications() {
     })();
   }, []);
 
+  // Kết nối SignalR
   useEffect(() => {
     const connection = new signalR.HubConnectionBuilder()
       .withUrl(`${HUB_BASE}/hubs/partner-notifications`, {
@@ -199,7 +254,7 @@ export default function PartnerNotifications() {
 
     connection.on("BookingCreated", push);
     connection.on("BookingUpdated", push);
-    connection.on("BookingCancelled", push); // ✅ mới
+    connection.on("BookingCancelled", push);
     connection.on("PartnerOffline", push);
 
     (async () => {
@@ -236,10 +291,14 @@ export default function PartnerNotifications() {
     };
   }, []);
 
+  // Cache ra localStorage
   useEffect(() => {
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify(events.slice(0, 100)));
-    } catch (e){e}
+    } catch (e) {
+      void e;
+      // ignore
+    }
   }, [events]);
 
   const markRead = async (id) => {
@@ -254,6 +313,7 @@ export default function PartnerNotifications() {
         headers: { Authorization: `Bearer ${token}` },
       });
     } catch (e) {
+      // rollback
       void e;
       setEvents((prev) =>
         prev.map((x) => (x.id === id ? { ...x, isRead: false } : x))
@@ -287,89 +347,157 @@ export default function PartnerNotifications() {
 
   return (
     <div className="space-y-4 text-sm">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">Kênh thông báo (Hotel):</span>
-          {connecting ? (
-            <span className="text-amber-600">Đang kết nối…</span>
-          ) : (
-            <span className={connected ? "text-green-600" : "text-red-600"}>
-              {connected ? "Đã kết nối" : "Mất kết nối"}
+      {/* HEADER */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">
+            Thông báo khách sạn
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Nhận thông tin đơn đặt mới, thay đổi & cảnh báo theo thời gian
+            thực.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Status connect */}
+          <div
+            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border ${
+              connecting
+                ? "border-amber-200 bg-amber-50 text-amber-700"
+                : connected
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-rose-200 bg-rose-50 text-rose-700"
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                connecting
+                  ? "bg-amber-400"
+                  : connected
+                  ? "bg-emerald-500"
+                  : "bg-rose-500"
+              }`}
+            />
+            <span>
+              {connecting
+                ? "Đang kết nối…"
+                : connected
+                ? "Đã kết nối"
+                : "Mất kết nối"}
+            </span>
+          </div>
+
+          {/* Nút đã đọc hết */}
+          <button
+            className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-medium ${
+              unreadCount === 0 || actBusy
+                ? "opacity-60 cursor-not-allowed"
+                : "hover:bg-slate-50"
+            }`}
+            disabled={unreadCount === 0 || actBusy}
+            onClick={markAllRead}
+            title="Đánh dấu tất cả đã đọc"
+          >
+            <span>Đã đọc hết</span>
+            {unreadCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-slate-900 text-white text-[10px]">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* LIST */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+          <span className="font-semibold text-slate-900 text-sm">
+            Thông báo gần đây
+          </span>
+          {events.length > 0 && (
+            <span className="text-xs text-slate-500">
+              Tổng: {events.length} thông báo (lưu tối đa 100)
             </span>
           )}
         </div>
 
-        <button
-          className={`px-3 py-1.5 rounded-lg border text-sm ${
-            unreadCount === 0 || actBusy
-              ? "opacity-60 cursor-not-allowed"
-              : "hover:bg-gray-50"
-          }`}
-          disabled={unreadCount === 0 || actBusy}
-          onClick={markAllRead}
-          title="Đánh dấu tất cả đã đọc"
-        >
-          Đã đọc hết {unreadCount > 0 ? `(${unreadCount})` : ""}
-        </button>
-      </div>
-
-      <div className="bg-white rounded-xl border overflow-hidden">
-        <div className="p-3 border-b font-semibold text-center">
-          Thông báo gần đây
-        </div>
-
         {events.length === 0 ? (
-          <div className="p-6 text-center text-gray-500">
-            Chưa có thông báo nào.
+          <div className="p-8 text-center text-slate-500 text-sm">
+            Chưa có thông báo nào. Khi có đơn mới hoặc cập nhật, thông báo sẽ
+            xuất hiện ở đây.
           </div>
         ) : (
-          <ul className="divide-y">
-            {events.map((ev, idx) => (
-              <li key={ev.id ?? idx} className="p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    {!ev.isRead && (
-                      <span
-                        className="inline-block w-2 h-2 rounded-full bg-emerald-500"
-                        title="Chưa đọc"
-                      />
-                    )}
-                    <TypeBadge type={ev.type} />
-                    <div className="font-medium">{ev.title || ev.type}</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-xs text-gray-500">
-                      {new Date(ev.at).toLocaleString("vi-VN")}
+          <div className="max-h-[640px] overflow-y-auto">
+            <ul className="divide-y divide-slate-100">
+              {events.map((ev, idx) => (
+                <li
+                  key={ev.id ?? idx}
+                  className={`px-4 py-3 transition-colors ${
+                    !ev.isRead
+                      ? "bg-slate-50/60 hover:bg-slate-50"
+                      : "hover:bg-slate-50/50"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {!ev.isRead && (
+                          <span
+                            className="inline-block w-2 h-2 rounded-full bg-emerald-500"
+                            title="Chưa đọc"
+                          />
+                        )}
+                        <TypeBadge type={ev.type} />
+                        <div className="font-medium text-slate-900 text-sm truncate">
+                          {ev.title || ev.type}
+                        </div>
+                      </div>
+                      {ev.message && (
+                        <div className="text-xs md:text-sm text-slate-700">
+                          {ev.message}
+                        </div>
+                      )}
                     </div>
-                    {!ev.isRead && (
-                      <button
-                        className={`px-2 py-1 text-xs rounded border hover:bg-gray-50 ${
-                          actBusy ? "opacity-60 cursor-not-allowed" : ""
-                        }`}
-                        onClick={() => markRead(ev.id)}
-                        disabled={actBusy}
-                        title="Đánh dấu đã đọc"
-                      >
-                        Đánh dấu đã đọc
-                      </button>
+
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-[11px] text-slate-500 text-right">
+                        {new Date(ev.at).toLocaleString("vi-VN")}
+                      </div>
+                      {!ev.isRead && (
+                        <button
+                          className={`px-2 py-1 text-xs rounded-lg border border-slate-200 hover:bg-slate-50 ${
+                            actBusy ? "opacity-60 cursor-not-allowed" : ""
+                          }`}
+                          onClick={() => markRead(ev.id)}
+                          disabled={actBusy}
+                          title="Đánh dấu đã đọc"
+                        >
+                          Đánh dấu đã đọc
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-2">
+                    {["BookingCreated", "BookingUpdated", "BookingCancelled"].includes(
+                      ev.type
+                    ) ? (
+                      <BookingCard ev={ev} />
+                    ) : ev.type === "PartnerOffline" ? (
+                      <div className="mt-2 text-xs md:text-sm text-slate-700 bg-slate-50 border border-dashed border-slate-200 rounded-xl px-3 py-2">
+                        {ev.message}
+                      </div>
+                    ) : (
+                      <pre className="mt-2 text-[11px] bg-slate-50 rounded-xl p-3 border border-slate-100 overflow-x-auto text-slate-700">
+                        {JSON.stringify(ev.raw || {}, null, 2)}
+                      </pre>
                     )}
                   </div>
-                </div>
-
-                <div className="mt-2">
-                  {["BookingCreated", "BookingUpdated", "BookingCancelled"].includes(ev.type) ? (
-                    <BookingCard ev={ev} />
-                  ) : ev.type === "PartnerOffline" ? (
-                    <div className="text-sm text-gray-700">{ev.message}</div>
-                  ) : (
-                    <pre className="text-xs bg-gray-50 rounded p-2 overflow-x-auto">
-                      {JSON.stringify(ev.raw || {}, null, 2)}
-                    </pre>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     </div>

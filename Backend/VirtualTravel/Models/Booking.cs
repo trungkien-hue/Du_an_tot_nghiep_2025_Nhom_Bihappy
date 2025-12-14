@@ -54,6 +54,11 @@ namespace VirtualTravel.Models
         public DateTime? CancelledAt { get; set; }
         public decimal? PenaltyAmount { get; set; }     // tổng phạt cấp booking (tổng các đêm Penalized)
 
+        public decimal? FinalPrice { get; set; }    // Giá sau giảm mỗi đêm
+        public decimal? FinalTotal { get; set; }    // Tổng giá sau giảm
+        public string? VoucherApplied { get; set; } // Tên voucher áp dụng
+
+
         // Navigation
         public User? User { get; set; }
         public Hotel? Hotel { get; set; }

@@ -4,7 +4,7 @@ using System.Security.Claims;
 
 namespace VirtualTravel.Hubs
 {
-    [Authorize] // chỉ user đăng nhập mới nhận
+    [Authorize]
     public class NotificationHub : Hub
     {
         public override async Task OnConnectedAsync()
@@ -19,10 +19,14 @@ namespace VirtualTravel.Hubs
 
                 foreach (var role in roles)
                 {
-                    if (!string.IsNullOrWhiteSpace(role))
+                    // ⭐ CHỐT CHUẨN GROUP: "Staff", "Admin"
+                    if (role == "Staff" || role == "Admin")
+                    {
                         await Groups.AddToGroupAsync(Context.ConnectionId, role);
+                    }
                 }
             }
+
             await base.OnConnectedAsync();
         }
     }

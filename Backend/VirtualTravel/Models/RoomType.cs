@@ -22,5 +22,8 @@ namespace VirtualTravel.Models
         public string? ExternalRoomTypeCode { get; set; }
 
         public ICollection<HotelAvailability>? HotelAvailabilities { get; set; }
+        public ICollection<RoomTypeImage> Images { get; set; } = new List<RoomTypeImage>();
+        public ICollection<RoomTypeAmenity> Amenities { get; set; }
+
     }
 }

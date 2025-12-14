@@ -8,6 +8,7 @@ using VirtualTravel.Data;
 using VirtualTravel.Dtos.Bookings;
 using VirtualTravel.Hubs;
 using VirtualTravel.Models;
+using VirtualTravel.Services.Notifications; // 👈 THÊM DÒNG NÀY
 
 namespace VirtualTravel.Controllers
 {
@@ -18,11 +19,17 @@ namespace VirtualTravel.Controllers
     {
         private readonly AppDbContext _db;
         private readonly IHubContext<NotificationHub> _notiHub;
+        private readonly IPartnerNotificationPublisher _partnerNoti; // 👈 THÊM
 
-        public MyBookingsController(AppDbContext db, IHubContext<NotificationHub> notiHub)
+        public MyBookingsController(
+            AppDbContext db,
+            IHubContext<NotificationHub> notiHub,
+            IPartnerNotificationPublisher partnerNoti // 👈 THÊM
+        )
         {
             _db = db;
             _notiHub = notiHub;
+            _partnerNoti = partnerNoti; // 👈 THÊM
         }
 
         private int GetUserId()
@@ -149,7 +156,7 @@ namespace VirtualTravel.Controllers
             return Ok(dto);
         }
 
-        // ===== NEW: Update đơn hàng =====
+        // ===== Update đơn hàng =====
         [HttpPut("{id:int}")]
         public async Task<IActionResult> Update(int id, [FromBody] MyBookingUpdateDto dto)
         {
@@ -180,12 +187,49 @@ namespace VirtualTravel.Controllers
 
             await _db.SaveChangesAsync();
 
-            // Thông báo cho Admin & Staff (Tour hoặc Hotel đều thông báo)
-            var name = b.TourID != null ? (b.Tour?.Name ?? "(tour)") : (b.Hotel?.Name ?? b.HotelName ?? "(khách sạn)");
+            // ===== Thông báo Admin & Staff =====
+            var name = b.TourID != null
+                ? (b.Tour?.Name ?? "(tour)")
+                : (b.Hotel?.Name ?? b.HotelName ?? "(khách sạn)");
+
             var title = "Khách hàng đã cập nhật đơn";
             var message = $"Đơn #{b.BookingID} - {(b.TourID != null ? "Tour" : "Hotel")}: {name}\n" +
                           $"Ngày: {b.CheckInDate:dd/MM/yyyy} → {b.CheckOutDate:dd/MM/yyyy}, SL: {b.Quantity}, Khách: {b.NumberOfGuests}";
+
             await AnnounceToAdminAndStaff(title, message, b.BookingID, "OrderUpdated", b.Status ?? "Updated");
+
+            // ===== Thông báo cho HOTEL (Partner) qua PartnerNotification =====
+            // Chỉ áp dụng cho booking khách sạn (không phải tour)
+            if (b.HotelID != null && b.HotelID > 0)
+            {
+                var hotelId = b.HotelID.Value;
+
+                var partnerNoti = new Notification
+                {
+                    Type = "BookingUpdated",
+                    Title = title,
+                    Message = message,
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false,
+                    BookingID = b.BookingID,
+                    HotelID = hotelId,
+                    TargetHotelId = hotelId
+                };
+
+                _db.Notifications.Add(partnerNoti);
+                await _db.SaveChangesAsync();
+
+                await _partnerNoti.BookingUpdatedAsync(hotelId, new
+                {
+                    notiId = partnerNoti.NotificationID,
+                    type = "BookingUpdated",
+                    title = partnerNoti.Title,
+                    message = partnerNoti.Message,
+                    createdAt = partnerNoti.CreatedAt,
+                    hotelId = hotelId,
+                    bookingId = b.BookingID
+                });
+            }
 
             return Ok(new
             {
@@ -220,12 +264,48 @@ namespace VirtualTravel.Controllers
             b.Status = "Canceled";
             await _db.SaveChangesAsync();
 
-            // Thông báo cho cả Admin & Staff, áp dụng cho Tour và Hotel
-            var name = b.TourID != null ? (b.Tour?.Name ?? "(tour)") : (b.Hotel?.Name ?? b.HotelName ?? "(khách sạn)");
+            // ===== Thông báo Admin & Staff =====
+            var name = b.TourID != null
+                ? (b.Tour?.Name ?? "(tour)")
+                : (b.Hotel?.Name ?? b.HotelName ?? "(khách sạn)");
+
             var title = b.TourID != null ? "Khách hàng đã hủy tour" : "Khách hàng đã hủy đặt phòng";
             var message = $"Đơn #{b.BookingID} - {(b.TourID != null ? "Tour" : "Hotel")}: {name}\n" +
                           $"Lý do: {dto?.Reason ?? "Không cung cấp"}";
+
             await AnnounceToAdminAndStaff(title, message, b.BookingID, "OrderUpdated", b.Status);
+
+            // ===== Thông báo cho HOTEL (Partner) qua PartnerNotification =====
+            if (b.HotelID != null && b.HotelID > 0)
+            {
+                var hotelId = b.HotelID.Value;
+
+                var partnerNoti = new Notification
+                {
+                    Type = "BookingCancelled",
+                    Title = title,
+                    Message = message,
+                    CreatedAt = DateTime.UtcNow,
+                    IsRead = false,
+                    BookingID = b.BookingID,
+                    HotelID = hotelId,
+                    TargetHotelId = hotelId
+                };
+
+                _db.Notifications.Add(partnerNoti);
+                await _db.SaveChangesAsync();
+
+                await _partnerNoti.BookingCancelledAsync(hotelId, new
+                {
+                    notiId = partnerNoti.NotificationID,
+                    type = "BookingCancelled",
+                    title = partnerNoti.Title,
+                    message = partnerNoti.Message,
+                    createdAt = partnerNoti.CreatedAt,
+                    hotelId = hotelId,
+                    bookingId = b.BookingID
+                });
+            }
 
             return Ok(new { b.BookingID, b.Status });
         }

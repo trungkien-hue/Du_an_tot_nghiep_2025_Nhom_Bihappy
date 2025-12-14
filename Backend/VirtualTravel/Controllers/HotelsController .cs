@@ -61,7 +61,8 @@ namespace VirtualTravel.Controllers
             public int? RoomsNeeded { get; set; }
         }
 
-        private static (DateTime checkin, DateTime checkout, int nights) NormalizeRange(DateTime checkIn, DateTime checkOut)
+        private static (DateTime checkin, DateTime checkout, int nights)
+            NormalizeRange(DateTime checkIn, DateTime checkOut)
         {
             var ci = checkIn.Date;
             var co = checkOut.Date;
@@ -73,7 +74,7 @@ namespace VirtualTravel.Controllers
         }
 
         // =====================================================================
-        //  GET /api/hotels  → danh sách khách sạn (hiển thị giá mới nhất)
+        //  GET /api/hotels
         // =====================================================================
         [HttpGet]
         public async Task<IActionResult> GetAll()
@@ -98,20 +99,17 @@ namespace VirtualTravel.Controllers
                         Description = rt.Description,
                         Capacity = rt.Capacity,
 
-                        // ✅ Lấy giá gần nhất (ưu tiên tương lai, fallback về quá khứ)
                         Price = rt.HotelAvailabilities
                             .Where(av => !av.IsDeleted)
                             .OrderBy(av => Math.Abs(EF.Functions.DateDiffDay(av.Date, today)))
                             .Select(av => av.Price)
                             .FirstOrDefault(),
 
-                        // ✅ Số phòng hôm nay
                         AvailableRooms = rt.HotelAvailabilities
                             .Where(av => !av.IsDeleted && av.Date == today)
                             .Select(av => av.AvailableRooms)
                             .FirstOrDefault(),
 
-                        // ✅ Toàn bộ availability
                         Availabilities = rt.HotelAvailabilities
                             .Where(av => !av.IsDeleted)
                             .OrderBy(av => av.Date)
@@ -128,6 +126,64 @@ namespace VirtualTravel.Controllers
 
             return Ok(hotels);
         }
+
+        // =====================================================================
+        // FIXED: GET /api/hotels/summary  → API nhẹ + không bị lỗi null
+        // =====================================================================
+        [HttpGet("summary")]
+        public async Task<IActionResult> GetSummary(
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 12,
+            [FromQuery] string? search = null)
+        {
+            if (page < 1) page = 1;
+            if (pageSize < 1) pageSize = 12;
+
+            IQueryable<Hotel> query = _db.Hotels
+                .AsNoTracking()
+                .Include(h => h.RoomTypes)
+                    .ThenInclude(rt => rt.HotelAvailabilities)
+                as IQueryable<Hotel>;
+
+
+            // Search
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                if (!string.IsNullOrWhiteSpace(search))
+                {
+                    var key = $"%{search}%";
+                    query = query.Where(h =>
+                        EF.Functions.Like(h.Name ?? "", key) ||
+                        EF.Functions.Like(h.Location ?? "", key));
+                }
+            }
+
+            var total = await query.CountAsync();
+
+            var hotels = await query
+                .OrderByDescending(h => h.HotelID)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(h => new
+                {
+                    h.HotelID,
+                    h.Name,
+                    h.Location,
+                    h.ImageURL,
+                    h.Rating,
+
+                    // ⭐ Tính giá nhỏ nhất một cách an toàn (không null)
+                    MinPrice = h.RoomTypes
+                        .SelectMany(rt => rt.HotelAvailabilities
+                            .Where(av => !av.IsDeleted)
+                            .Select(av => (decimal?)av.Price))
+                        .Min() ?? 0
+                })
+                .ToListAsync();
+
+            return Ok(new { total, items = hotels });
+        }
+
 
         // =====================================================================
         //  GET /api/hotels/{id}
@@ -149,21 +205,25 @@ namespace VirtualTravel.Controllers
                     Location = x.Location,
                     ImageURL = x.ImageURL,
                     Rating = x.Rating,
+
                     RoomTypes = x.RoomTypes.Select(rt => new RoomTypeDto
                     {
                         RoomTypeID = rt.RoomTypeID,
                         Name = rt.Name,
                         Description = rt.Description,
                         Capacity = rt.Capacity,
+
                         Price = rt.HotelAvailabilities
                             .Where(av => !av.IsDeleted)
-                            .OrderBy(av => Math.Abs(EF.Functions.DateDiffDay(av.Date, today) ))
+                            .OrderBy(av => Math.Abs(EF.Functions.DateDiffDay(av.Date, today)))
                             .Select(av => av.Price)
                             .FirstOrDefault(),
+
                         AvailableRooms = rt.HotelAvailabilities
                             .Where(av => !av.IsDeleted && av.Date == today)
                             .Select(av => av.AvailableRooms)
                             .FirstOrDefault(),
+
                         Availabilities = rt.HotelAvailabilities
                             .Where(av => !av.IsDeleted)
                             .OrderBy(av => av.Date)
@@ -185,7 +245,7 @@ namespace VirtualTravel.Controllers
         }
 
         // =====================================================================
-        //  CORE SEARCH LOGIC (dùng chung cho GET/POST)
+        // ⭐⭐ FIXED: CORE SEARCH WITH AUTO-FILL (OPTION B)
         // =====================================================================
         private async Task<HotelSearchAvailabilityDto?> SearchOneHotelAvailabilityCore(
             int hotelId, DateTime checkIn, DateTime checkOut, int roomsNeeded)
@@ -207,7 +267,8 @@ namespace VirtualTravel.Controllers
                         rt.RoomTypeID,
                         rt.Name,
                         rt.Description,
-                        rt.Capacity
+                        rt.Capacity,
+                        rt.TotalRooms
                     }).ToList()
                 })
                 .FirstOrDefaultAsync();
@@ -216,7 +277,7 @@ namespace VirtualTravel.Controllers
 
             var roomTypeIds = hotel.RoomTypes.Select(rt => rt.RoomTypeID).ToList();
 
-            var availabilities = await _db.HotelAvailabilities
+            var rawAvail = await _db.HotelAvailabilities
                 .AsNoTracking()
                 .Where(a =>
                     a.HotelID == hotel.HotelID &&
@@ -228,7 +289,7 @@ namespace VirtualTravel.Controllers
                 .ThenBy(a => a.Date)
                 .ToListAsync();
 
-            var availByRt = availabilities
+            var availByRt = rawAvail
                 .GroupBy(a => a.RoomTypeID)
                 .ToDictionary(g => g.Key, g => g.ToList());
 
@@ -237,15 +298,41 @@ namespace VirtualTravel.Controllers
             foreach (var rt in hotel.RoomTypes)
             {
                 availByRt.TryGetValue(rt.RoomTypeID, out var days);
-                if (days == null || days.Count < range.nights) continue;
+                days ??= new List<HotelAvailability>();
 
-                var minAvail = days.Min(a => a.AvailableRooms);
-                if (minAvail < roomsNeeded) continue;
+                // ===== ⭐ AUTO FILL MISSING DAYS (OPTION B) =====
+                var completeDays = new List<HotelAvailability>();
+                for (var d = range.checkin; d < range.checkout; d = d.AddDays(1))
+                {
+                    var exists = days.FirstOrDefault(x => x.Date == d);
 
-                var priceFirstNight = days
+                    if (exists == null)
+                    {
+                        completeDays.Add(new HotelAvailability
+                        {
+                            HotelID = hotelId,
+                            RoomTypeID = rt.RoomTypeID,
+                            Date = d,
+                            AvailableRooms = rt.TotalRooms,
+                            Price = days.FirstOrDefault()?.Price ?? 0
+                        });
+                    }
+                    else
+                    {
+                        completeDays.Add(exists);
+                    }
+                }
+
+                // ===== ⭐ RULE: MIN AVAILABLE PER ROOMTYPE (độc lập)
+                var minAvail = completeDays.Min(a => a.AvailableRooms);
+                if (minAvail < roomsNeeded)
+                    continue;
+
+                // Giá đêm đầu
+                var priceFirstNight = completeDays
                     .Where(d => d.Date == range.checkin)
                     .Select(d => d.Price)
-                    .DefaultIfEmpty(days.Min(d => d.Price))
+                    .DefaultIfEmpty(0)
                     .First();
 
                 resultRoomTypes.Add(new RoomTypeDto
@@ -256,7 +343,7 @@ namespace VirtualTravel.Controllers
                     Capacity = rt.Capacity,
                     AvailableRooms = minAvail,
                     Price = priceFirstNight,
-                    Availabilities = days.Select(d => new HotelAvailabilityDto
+                    Availabilities = completeDays.Select(d => new HotelAvailabilityDto
                     {
                         AvailabilityID = d.HotelAvailabilityID,
                         Date = d.Date,
@@ -280,7 +367,7 @@ namespace VirtualTravel.Controllers
         }
 
         // =====================================================================
-        //  GET /api/Hotels/search-availability?hotelId=&checkIn=&checkOut=&roomsNeeded=
+        //  GET /api/hotels/search-availability
         // =====================================================================
         [HttpGet("search-availability")]
         public async Task<IActionResult> SearchAvailability(
@@ -293,8 +380,12 @@ namespace VirtualTravel.Controllers
 
             try
             {
-                var result = await SearchOneHotelAvailabilityCore(hotelId, checkIn, checkOut, roomsNeeded);
-                if (result == null) return NotFound($"Không tìm thấy khách sạn id={hotelId}.");
+                var result = await SearchOneHotelAvailabilityCore(
+                    hotelId, checkIn, checkOut, roomsNeeded);
+
+                if (result == null)
+                    return NotFound($"Không tìm thấy khách sạn id={hotelId}.");
+
                 return Ok(new[] { result });
             }
             catch (ArgumentException ex)
@@ -304,10 +395,11 @@ namespace VirtualTravel.Controllers
         }
 
         // =====================================================================
-        //  POST /api/Hotels/search-availability
+        //  POST /api/hotels/search-availability
         // =====================================================================
         [HttpPost("search-availability")]
-        public async Task<IActionResult> SearchAvailabilityPost([FromBody] SearchAvailabilityRequest body)
+        public async Task<IActionResult> SearchAvailabilityPost(
+            [FromBody] SearchAvailabilityRequest body)
         {
             if (body == null || body.Checkin == null || body.Checkout == null)
                 return BadRequest("Thiếu checkin/checkout.");
@@ -318,28 +410,46 @@ namespace VirtualTravel.Controllers
             {
                 if (body.HotelId.HasValue)
                 {
-                    var one = await SearchOneHotelAvailabilityCore(body.HotelId.Value, body.Checkin.Value, body.Checkout.Value, roomsNeeded);
-                    if (one == null) return Ok(Array.Empty<HotelSearchAvailabilityDto>());
+                    var one = await SearchOneHotelAvailabilityCore(
+                        body.HotelId.Value,
+                        body.Checkin.Value,
+                        body.Checkout.Value,
+                        roomsNeeded);
+
+                    if (one == null)
+                        return Ok(Array.Empty<HotelSearchAvailabilityDto>());
+
                     return Ok(new[] { one });
                 }
 
+                // Tìm theo name/location
                 var hotelIds = await _db.Hotels
                     .AsNoTracking()
                     .Where(h =>
-                        (string.IsNullOrWhiteSpace(body.Name) || EF.Functions.Like(h.Name, $"%{body.Name}%")) &&
-                        (string.IsNullOrWhiteSpace(body.Location) || EF.Functions.Like(h.Location, $"%{body.Location}%")))
+                        (string.IsNullOrWhiteSpace(body.Name) ||
+                            EF.Functions.Like(h.Name, $"%{body.Name}%")) &&
+                        (string.IsNullOrWhiteSpace(body.Location) ||
+                            EF.Functions.Like(h.Location, $"%{body.Location}%")))
                     .Select(h => h.HotelID)
                     .ToListAsync();
 
                 var results = new List<HotelSearchAvailabilityDto>();
-                foreach (var hid in hotelIds)
+
+                foreach (var id in hotelIds)
                 {
-                    var item = await SearchOneHotelAvailabilityCore(hid, body.Checkin.Value, body.Checkout.Value, roomsNeeded);
+                    var item = await SearchOneHotelAvailabilityCore(
+                        id,
+                        body.Checkin.Value,
+                        body.Checkout.Value,
+                        roomsNeeded);
+
                     if (item != null && item.RoomTypes.Count > 0)
                         results.Add(item);
                 }
 
-                return Ok(results.OrderBy(h => h.RoomTypes.FirstOrDefault()?.Price ?? decimal.MaxValue).ToList());
+                return Ok(results
+                    .OrderBy(h => h.RoomTypes.FirstOrDefault()?.Price ?? decimal.MaxValue)
+                    .ToList());
             }
             catch (ArgumentException ex)
             {
@@ -348,7 +458,7 @@ namespace VirtualTravel.Controllers
         }
 
         // =====================================================================
-        //  Endpoint phụ tương thích cũ
+        //  PATH COMPATIBILITY
         // =====================================================================
         [HttpGet("{hotelId:int}/availability")]
         public Task<IActionResult> GetHotelAvailabilityByPath(

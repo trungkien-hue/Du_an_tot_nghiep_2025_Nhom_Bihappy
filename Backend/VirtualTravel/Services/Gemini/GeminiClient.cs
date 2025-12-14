@@ -29,6 +29,16 @@ namespace VirtualTravel.Services.Gemini
         private readonly TourSearchService _tourSearch;
         private readonly HotelSearchService _hotelSearch;
 
+        // 🔹 Đoạn nhắc thông tin khách hàng – sẽ gắn vào cuối mọi câu trả lời
+        private const string CustomerInfoHint =
+            "Để mình hỗ trợ **đặt/giữ chỗ** nhanh hơn, bạn vui lòng cho mình xin các thông tin sau:\n" +
+            "• Họ tên người liên hệ\n" +
+            "• Số điện thoại / Zalo\n" +
+            "• Số lượng khách (người lớn / trẻ em)\n" +
+            "• Ngày đi (hoặc ngày nhận phòng / trả phòng)\n" +
+            "• Ngân sách dự kiến (nếu có).\n\n" +
+            "Bạn cứ gửi theo dạng gạch đầu dòng đơn giản, mình sẽ tư vấn phương án phù hợp nhất nhé 😊";
+
         public GeminiClient(
             HttpClient http,
             IOptions<GeminiOptions> opt,
@@ -194,13 +204,16 @@ namespace VirtualTravel.Services.Gemini
                 var toursTotal = toursNode?["total"]?.GetValue<int>() ?? 0;
                 if (toursTotal > 0)
                 {
+                    var text =
+                        "Xin chào 👋 Mình đã tìm thấy một số **tour** khớp từ khoá bạn vừa nhập. " +
+                        "Bạn có thể bổ sung địa điểm hoặc khoảng giá để lọc chính xác hơn. " +
+                        "Chúc bạn có hành trình tuyệt vời!";
+
                     return new ChatWithDataResult
                     {
                         Function = "search_tours",
                         Data = toursTry,
-                        Text = "Xin chào 👋 Mình đã tìm thấy một số **tour** khớp từ khoá bạn vừa nhập. " +
-                               "Bạn có thể bổ sung địa điểm hoặc khoảng giá để lọc chính xác hơn. " +
-                               "Chúc bạn có hành trình tuyệt vời!"
+                        Text = text + "\n\n" + CustomerInfoHint
                     };
                 }
 
@@ -215,32 +228,37 @@ namespace VirtualTravel.Services.Gemini
                 var hotelsTotal = hotelsNode?["total"]?.GetValue<int>() ?? 0;
                 if (hotelsTotal > 0)
                 {
+                    var text =
+                        "Xin chào 👋 Mình đã tìm thấy một số **khách sạn** khớp từ khoá bạn vừa nhập. " +
+                        "Bạn có thể thêm ngày nhận/trả phòng hoặc khoảng giá để kết quả chính xác hơn. " +
+                        "Chúc bạn có hành trình tuyệt vời!";
+
                     return new ChatWithDataResult
                     {
                         Function = "search_hotels",
                         Data = hotelsTry,
-                        Text = "Xin chào 👋 Mình đã tìm thấy một số **khách sạn** khớp từ khoá bạn vừa nhập. " +
-                               "Bạn có thể thêm ngày nhận/trả phòng hoặc khoảng giá để kết quả chính xác hơn. " +
-                               "Chúc bạn có hành trình tuyệt vời!"
+                        Text = text + "\n\n" + CustomerInfoHint
                     };
                 }
 
                 // 2.3. Không có gì => trả suggestions
                 var suggestData = await BuildSuggestionPayloadAsync();
+                var suggestText =
+                    "Xin chào 👋\n" +
+                    "Mình có thể giúp bạn tìm **tour** hoặc **khách sạn** dựa trên dữ liệu trong hệ thống.\n\n" +
+                    "Bạn có thể nhập tự nhiên (không phân biệt hoa/thường, có/không dấu), ví dụ:\n" +
+                    "• tim khach san da lat duoi 800k checkin 2025-11-20 checkout 2025-11-22\n" +
+                    "• tour ha long 3 ngay duoi 3tr\n" +
+                    "• khach san da nang gan bien checkin 2025-12-01 den 2025-12-03\n" +
+                    "• tour sapa 2 ngay 1 dem duoi 2tr5\n\n" +
+                    "Mình đã gửi kèm vài gợi ý và một số tour/khách sạn nổi bật để bạn tham khảo. " +
+                    "Chúc bạn có hành trình tuyệt vời!";
+
                 return new ChatWithDataResult
                 {
                     Function = "suggestions",
                     Data = suggestData,
-                    Text =
-                        "Xin chào 👋\n" +
-                        "Mình có thể giúp bạn tìm **tour** hoặc **khách sạn** dựa trên dữ liệu trong hệ thống.\n\n" +
-                        "Bạn có thể nhập tự nhiên (không phân biệt hoa/thường, có/không dấu), ví dụ:\n" +
-                        "• tim khach san da lat duoi 800k checkin 2025-11-20 checkout 2025-11-22\n" +
-                        "• tour ha long 3 ngay duoi 3tr\n" +
-                        "• khach san da nang gan bien checkin 2025-12-01 den 2025-12-03\n" +
-                        "• tour sapa 2 ngay 1 dem duoi 2tr5\n\n" +
-                        "Mình đã gửi kèm vài gợi ý và một số tour/khách sạn nổi bật để bạn tham khảo. " +
-                        "Chúc bạn có hành trình tuyệt vời!"
+                    Text = suggestText + "\n\n" + CustomerInfoHint
                 };
             }
 
@@ -298,7 +316,13 @@ namespace VirtualTravel.Services.Gemini
             }
             else
             {
-                return new ChatWithDataResult { Text = "Chỉ hỗ trợ function `search_tours` và `search_hotels`.", Function = "", Data = null };
+                // Thông báo + nhắc info khách
+                return new ChatWithDataResult
+                {
+                    Text = "Chỉ hỗ trợ function `search_tours` và `search_hotels`.\n\n" + CustomerInfoHint,
+                    Function = "",
+                    Data = null
+                };
             }
 
             // ROUND 2: để model viết tóm tắt (có chào hỏi + chi tiết + lời kết)
@@ -327,9 +351,14 @@ namespace VirtualTravel.Services.Gemini
             var finalJson = JsonNode.Parse(text2);
             var finalText = finalJson?["candidates"]?[0]?["content"]?["parts"]?[0]?["text"]?.GetValue<string>() ?? string.Empty;
 
+            // 🔹 Luôn gắn thêm đoạn nhắc thông tin khách
+            var finalWithInfo = string.IsNullOrWhiteSpace(finalText)
+                ? CustomerInfoHint
+                : finalText + "\n\n" + CustomerInfoHint;
+
             return new ChatWithDataResult
             {
-                Text = finalText,
+                Text = finalWithInfo,
                 Function = name,
                 Data = dbResult
             };

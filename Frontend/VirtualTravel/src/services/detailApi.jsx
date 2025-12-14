@@ -3,14 +3,26 @@ import axios from "axios";
 const BASE = import.meta.env.VITE_API_BASE || "http://localhost:5059";
 
 export default {
-  async getHotelDetail(id) {
-    const res = await axios.get(`${BASE}/api/hoteltourdetail/hotel/${id}`);
+  async getBasic(id) {
+    const res = await axios.get(`${BASE}/api/hoteltourdetail/basic/${id}`);
     return res.data;
   },
+
+  async getGallery(id) {
+    const res = await axios.get(`${BASE}/api/hoteltourdetail/gallery/${id}`);
+    return res.data;
+  },
+
+  async getRoomTypes(id) {
+    const res = await axios.get(`${BASE}/api/hoteltourdetail/roomtypes/${id}`);
+    return res.data;
+  },
+
   async getReviews(id) {
     const res = await axios.get(`${BASE}/api/hoteltourdetail/reviews/${id}`);
     return res.data;
   },
+
   async createReview({ hotelId, userName, rating, comment, files }) {
     const fd = new FormData();
     fd.append("HotelId", hotelId);

@@ -1,32 +1,50 @@
 // src/services/hotelImageApi.js
-import axios from "./axiosClient";
+import axios from "axios";
 
-const hotelImageApi = {
-  // Trả về MẢNG dữ liệu, chịu được cả 2 kiểu axiosClient (trả response.data hoặc response)
-  getAll(hotelId) {
-    return axios.get(`/hotels/${hotelId}/images`).then((r) => r?.data ?? r);
-  },
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:7059";
 
-  upload(hotelId, files, tag = null) {
-    const form = new FormData();
-    for (const f of files) form.append("files", f);
-    if (tag) form.append("tag", tag);
-    return axios.post(`/hotels/${hotelId}/images`, form, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
-  },
+const api = axios.create({
+  baseURL: `${API_BASE}/api/hotels`,
+  withCredentials: true,
+});
 
-  setPrimary(hotelId, imageId) {
-    return axios.patch(`/hotels/${hotelId}/images/${imageId}/primary`);
-  },
+// GET: /api/hotels/{hotelId}/images
+async function getAll(hotelId) {
+  const res = await api.get(`/${hotelId}/images`);
+  return res.data;
+}
 
-  reorder(hotelId, payload) {
-    return axios.patch(`/hotels/${hotelId}/images/reorder`, payload);
-  },
+// POST: /api/hotels/{hotelId}/images
+async function upload(hotelId, formData) {
+  const res = await api.post(`/${hotelId}/images`, formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return res.data;
+}
 
-  delete(hotelId, imageId) {
-    return axios.delete(`/hotels/${hotelId}/images/${imageId}`);
-  },
+// DELETE: /api/hotels/{hotelId}/images/{imageId}
+async function deleteImage(hotelId, imageId) {
+  const res = await api.delete(`/${hotelId}/images/${imageId}`);
+  return res.data;
+}
+
+// PATCH: /api/hotels/{hotelId}/images/{imageId}/primary
+async function setPrimary(hotelId, imageId) {
+  const res = await api.patch(`/${hotelId}/images/${imageId}/primary`);
+  return res.data;
+}
+
+// PATCH: /api/hotels/{hotelId}/images/reorder
+async function reorder(hotelId, imageIds) {
+  const body = { order: imageIds };
+  const res = await api.patch(`/${hotelId}/images/reorder`, body);
+  return res.data;
+}
+
+export default {
+  getAll,
+  upload,
+  delete: deleteImage,
+  setPrimary,
+  reorder,
 };
-
-export default hotelImageApi;

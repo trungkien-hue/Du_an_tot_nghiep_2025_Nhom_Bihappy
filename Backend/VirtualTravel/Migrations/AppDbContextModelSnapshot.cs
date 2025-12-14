@@ -22,6 +22,28 @@ namespace VirtualTravel.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
+            modelBuilder.Entity("Amenity", b =>
+                {
+                    b.Property<int>("AmenityID")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("AmenityID"));
+
+                    b.Property<string>("Icon")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.HasKey("AmenityID");
+
+                    b.ToTable("Amenities");
+                });
+
             modelBuilder.Entity("Notification", b =>
                 {
                     b.Property<int>("NotificationID")
@@ -69,6 +91,21 @@ namespace VirtualTravel.Migrations
                     b.HasKey("NotificationID");
 
                     b.ToTable("Notifications");
+                });
+
+            modelBuilder.Entity("RoomTypeAmenity", b =>
+                {
+                    b.Property<int>("RoomTypeID")
+                        .HasColumnType("int");
+
+                    b.Property<int>("AmenityID")
+                        .HasColumnType("int");
+
+                    b.HasKey("RoomTypeID", "AmenityID");
+
+                    b.HasIndex("AmenityID");
+
+                    b.ToTable("RoomTypeAmenities");
                 });
 
             modelBuilder.Entity("User", b =>
@@ -145,6 +182,12 @@ namespace VirtualTravel.Migrations
                     b.Property<string>("ExternalBookingId")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<decimal?>("FinalPrice")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("FinalTotal")
+                        .HasColumnType("decimal(18,2)");
+
                     b.Property<string>("FullName")
                         .HasColumnType("nvarchar(max)");
 
@@ -217,6 +260,9 @@ namespace VirtualTravel.Migrations
 
                     b.Property<int?>("UserID")
                         .HasColumnType("int");
+
+                    b.Property<string>("VoucherApplied")
+                        .HasColumnType("nvarchar(max)");
 
                     b.HasKey("BookingID");
 
@@ -728,6 +774,88 @@ namespace VirtualTravel.Migrations
                     b.ToTable("RoomType");
                 });
 
+            modelBuilder.Entity("VirtualTravel.Models.RoomTypeImage", b =>
+                {
+                    b.Property<int>("RoomTypeImageID")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("RoomTypeImageID"));
+
+                    b.Property<string>("ImageUrl")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("RoomTypeID")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("int");
+
+                    b.HasKey("RoomTypeImageID");
+
+                    b.HasIndex("RoomTypeID");
+
+                    b.ToTable("RoomTypeImages");
+                });
+
+            modelBuilder.Entity("VirtualTravel.Models.RoomTypeVoucher", b =>
+                {
+                    b.Property<int>("RoomTypeVoucherID")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("RoomTypeVoucherID"));
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<decimal?>("DiscountAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("DiscountPercent")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
+
+                    b.Property<DateTime>("FromDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("HotelID")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("RoomTypeID")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime?>("ToDate")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("RoomTypeVoucherID");
+
+                    b.HasIndex("RoomTypeID");
+
+                    b.ToTable("RoomTypeVouchers");
+                });
+
             modelBuilder.Entity("VirtualTravel.Models.Tour", b =>
                 {
                     b.Property<int>("TourID")
@@ -957,6 +1085,25 @@ namespace VirtualTravel.Migrations
                     b.ToTable("WebhookLogs");
                 });
 
+            modelBuilder.Entity("RoomTypeAmenity", b =>
+                {
+                    b.HasOne("Amenity", "Amenity")
+                        .WithMany("RoomTypeAmenities")
+                        .HasForeignKey("AmenityID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("VirtualTravel.Models.RoomType", "RoomType")
+                        .WithMany("Amenities")
+                        .HasForeignKey("RoomTypeID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Amenity");
+
+                    b.Navigation("RoomType");
+                });
+
             modelBuilder.Entity("VirtualTravel.Models.Booking", b =>
                 {
                     b.HasOne("VirtualTravel.Models.HotelAvailability", "HotelAvailability")
@@ -974,8 +1121,7 @@ namespace VirtualTravel.Migrations
 
                     b.HasOne("VirtualTravel.Models.TourAvailability", "TourAvailability")
                         .WithMany()
-                        .HasForeignKey("TourAvailabilityID")
-                        .OnDelete(DeleteBehavior.Restrict);
+                        .HasForeignKey("TourAvailabilityID");
 
                     b.HasOne("VirtualTravel.Models.Tour", "Tour")
                         .WithMany("Bookings")
@@ -1108,6 +1254,28 @@ namespace VirtualTravel.Migrations
                     b.Navigation("Hotel");
                 });
 
+            modelBuilder.Entity("VirtualTravel.Models.RoomTypeImage", b =>
+                {
+                    b.HasOne("VirtualTravel.Models.RoomType", "RoomType")
+                        .WithMany("Images")
+                        .HasForeignKey("RoomTypeID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("RoomType");
+                });
+
+            modelBuilder.Entity("VirtualTravel.Models.RoomTypeVoucher", b =>
+                {
+                    b.HasOne("VirtualTravel.Models.RoomType", "RoomType")
+                        .WithMany()
+                        .HasForeignKey("RoomTypeID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("RoomType");
+                });
+
             modelBuilder.Entity("VirtualTravel.Models.TourAvailability", b =>
                 {
                     b.HasOne("VirtualTravel.Models.Tour", "Tour")
@@ -1117,6 +1285,11 @@ namespace VirtualTravel.Migrations
                         .IsRequired();
 
                     b.Navigation("Tour");
+                });
+
+            modelBuilder.Entity("Amenity", b =>
+                {
+                    b.Navigation("RoomTypeAmenities");
                 });
 
             modelBuilder.Entity("User", b =>
@@ -1150,7 +1323,11 @@ namespace VirtualTravel.Migrations
 
             modelBuilder.Entity("VirtualTravel.Models.RoomType", b =>
                 {
+                    b.Navigation("Amenities");
+
                     b.Navigation("HotelAvailabilities");
+
+                    b.Navigation("Images");
                 });
 
             modelBuilder.Entity("VirtualTravel.Models.Tour", b =>

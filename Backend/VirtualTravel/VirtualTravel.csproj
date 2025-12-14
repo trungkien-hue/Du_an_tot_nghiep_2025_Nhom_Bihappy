@@ -30,6 +30,7 @@
 	<ItemGroup>
 		<Folder Include="Data\" />
 		<Folder Include="wwwroot\uploads\hotels\2\" />
+		<Folder Include="wwwroot\uploads\roomtypes\1\" />
 	</ItemGroup>
 
 </Project>

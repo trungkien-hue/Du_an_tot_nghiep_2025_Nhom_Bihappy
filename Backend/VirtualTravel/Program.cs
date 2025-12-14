@@ -1,14 +1,15 @@
 ﻿// File: Program.cs
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.IO;
 using System.Text;
 using System.Text.Json.Serialization;
-using System.IO;
 using VirtualTravel.Data;
 using VirtualTravel.Hubs;
 using VirtualTravel.Integrations.PartnerHotel;
@@ -25,6 +26,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers()
     .AddJsonOptions(o =>
     {
+        o.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
+
         o.JsonSerializerOptions.PropertyNamingPolicy = null;
         o.JsonSerializerOptions.DictionaryKeyPolicy = null;
         o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -171,6 +174,9 @@ builder.Services.AddScoped<IAriSyncService, AriSyncService>();
 builder.Services.AddScoped<INotificationPublisher, NotificationPublisher>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 
+// 👇 ĐĂNG KÝ PUBLISHER CHO PARTNER (HOTEL)
+builder.Services.AddScoped<IPartnerNotificationPublisher, PartnerNotificationPublisher>();
+
 /* ========================================================================
    ✅ Outbound Webhook (CÁCH A – No-op sender qua DI)
    - Bind PartnerWebhook section → PartnerWebhookOptions
@@ -225,7 +231,15 @@ await app.SeedAllPartnersFromJsonAsync(seedFolder);
 /* ====================================================== */
 
 app.UseHttpsRedirection();
-app.UseStaticFiles();
+app.UseStaticFiles(); // Load wwwroot mặc định
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(
+        Path.Combine(builder.Environment.WebRootPath, "uploads")),
+    RequestPath = "/uploads"
+});
+
 app.UseCors("Dev");
 app.UseAuthentication();
 app.UseAuthorization();
@@ -247,7 +261,10 @@ public class OldBookingCleanupService : BackgroundService
     private readonly ILogger<OldBookingCleanupService> _logger;
 
     public OldBookingCleanupService(IServiceScopeFactory scopeFactory, ILogger<OldBookingCleanupService> logger)
-    { _scopeFactory = scopeFactory; _logger = logger; }
+    {
+        _scopeFactory = scopeFactory;
+        _logger = logger;
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -255,7 +272,8 @@ public class OldBookingCleanupService : BackgroundService
         {
             try { await Cleanup(stoppingToken); }
             catch (Exception ex) { _logger.LogError(ex, "Cleanup old bookings failed"); }
-            try { await Task.Delay(TimeSpan.FromHours(6), stoppingToken); } catch (TaskCanceledException) { }
+            try { await Task.Delay(TimeSpan.FromHours(6), stoppingToken); }
+            catch (TaskCanceledException) { }
         }
     }
 

@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -40,9 +41,22 @@ namespace VirtualTravel.Controllers.PartnerHotel
                 public PricesPayload? Prices { get; set; }
                 public int? RoomTypeId { get; set; }
             }
-            public sealed class CustomerPayload { public string? Name { get; set; } public string? Phone { get; set; } }
-            public sealed class StayPayload { public DateTime? CheckIn { get; set; } public DateTime? CheckOut { get; set; } public int? Quantity { get; set; } }
-            public sealed class PricesPayload { public decimal? PricePerNight { get; set; } public decimal? Total { get; set; } }
+            public sealed class CustomerPayload
+            {
+                public string? Name { get; set; }
+                public string? Phone { get; set; }
+            }
+            public sealed class StayPayload
+            {
+                public DateTime? CheckIn { get; set; }
+                public DateTime? CheckOut { get; set; }
+                public int? Quantity { get; set; }
+            }
+            public sealed class PricesPayload
+            {
+                public decimal? PricePerNight { get; set; }
+                public decimal? Total { get; set; }
+            }
         }
 
         [HttpGet]
@@ -71,9 +85,22 @@ namespace VirtualTravel.Controllers.PartnerHotel
                         TargetHotelId = n.TargetHotelId,
                         Extra = b == null ? null : new PartnerNotiDto.ExtraPayload
                         {
-                            Customer = new PartnerNotiDto.CustomerPayload { Name = b.FullName, Phone = b.Phone },
-                            Stay = new PartnerNotiDto.StayPayload { CheckIn = b.CheckInDate, CheckOut = b.CheckOutDate, Quantity = b.Quantity },
-                            Prices = new PartnerNotiDto.PricesPayload { PricePerNight = b.Price, Total = b.TotalPrice },
+                            Customer = new PartnerNotiDto.CustomerPayload
+                            {
+                                Name = b.FullName,
+                                Phone = b.Phone
+                            },
+                            Stay = new PartnerNotiDto.StayPayload
+                            {
+                                CheckIn = b.CheckInDate,
+                                CheckOut = b.CheckOutDate,
+                                Quantity = b.Quantity
+                            },
+                            Prices = new PartnerNotiDto.PricesPayload
+                            {
+                                PricePerNight = b.Price,
+                                Total = b.TotalPrice
+                            },
                             RoomTypeId = b.RoomTypeID
                         }
                     };
@@ -92,9 +119,18 @@ namespace VirtualTravel.Controllers.PartnerHotel
         public async Task<IActionResult> MarkRead(int notificationId, CancellationToken ct)
         {
             var n = await _db.Notifications
-                .FirstOrDefaultAsync(x => x.NotificationID == notificationId && x.TargetHotelId == CurrentHotelId, ct);
+                .FirstOrDefaultAsync(x =>
+                    x.NotificationID == notificationId &&
+                    x.TargetHotelId == CurrentHotelId, ct);
+
             if (n == null) return NotFound();
-            if (!n.IsRead) { n.IsRead = true; await _db.SaveChangesAsync(ct); }
+
+            if (!n.IsRead)
+            {
+                n.IsRead = true;
+                await _db.SaveChangesAsync(ct);
+            }
+
             return Ok(new { message = "Đã đánh dấu đã đọc", id = notificationId });
         }
 
@@ -104,8 +140,10 @@ namespace VirtualTravel.Controllers.PartnerHotel
             var list = await _db.Notifications
                 .Where(x => x.TargetHotelId == CurrentHotelId && !x.IsRead)
                 .ToListAsync(ct);
+
             foreach (var n in list) n.IsRead = true;
             await _db.SaveChangesAsync(ct);
+
             return Ok(new { message = "Đã đánh dấu tất cả là đã đọc", count = list.Count });
         }
     }

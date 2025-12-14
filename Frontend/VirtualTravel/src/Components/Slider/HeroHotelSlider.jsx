@@ -1,3 +1,4 @@
+// src/Pages/HotelDetail/HeroHotelSlider.jsx
 import { useEffect, useState, useRef } from "react";
 import { Link } from "react-router-dom";
 
@@ -30,7 +31,10 @@ export default function HeroHotelSlider({
 
   if (!hotels.length) return null;
 
-  const safeIdx = ((n, len) => (len === 0 ? 0 : ((n % len) + len) % len))(current, hotels.length);
+  const safeIdx = ((n, len) => (len === 0 ? 0 : ((n % len) + len) % len))(
+    current,
+    hotels.length
+  );
   const active = hotels[safeIdx] || {};
   const nextHotel = hotels[(safeIdx + 1) % hotels.length] || {};
 
@@ -54,9 +58,18 @@ export default function HeroHotelSlider({
         className="absolute inset-0 bg-cover bg-center transition-all duration-700"
         style={{ backgroundImage: `url(${activeImg})` }}
       />
-      {/* Overlays */}
-      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/55 to-black/20" />
-      <div className="absolute inset-x-0 bottom-0 h-16 z-[1] pointer-events-none bg-gradient-to-b from-transparent via-black/30 to-white" />
+
+      {/* Overlay tối nền ~40% */}
+      <div className="absolute inset-0 bg-black/40" />
+
+      {/* Gradient trái -> phải (giữ text bên trái rõ hơn) */}
+      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-black/20" />
+
+      {/* Vignette mờ 4 cạnh */}
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_center,transparent_55%,rgba(0,0,0,0.7))]" />
+
+      {/* Gradient dưới đáy – cho thanh info dưới tối hơn */}
+      <div className="absolute inset-x-0 bottom-0 h-16 z-[1] pointer-events-none bg-gradient-to-b from-transparent via-black/40 to-black" />
 
       <div className="relative z-[2] flex h-full max-w-7xl mx-auto px-6 lg:px-10">
         {/* Trái: tiêu đề/mô tả */}
@@ -77,8 +90,19 @@ export default function HeroHotelSlider({
               className="inline-flex items-center gap-2 bg-amber-500 hover:bg-amber-600 transition text-white font-semibold px-5 py-3 rounded-lg w-fit drop-shadow-[0_2px_6px_rgba(0,0,0,0.4)]"
             >
               Xem chi tiết
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
               </svg>
             </Link>
           )}
@@ -88,7 +112,7 @@ export default function HeroHotelSlider({
         <div className="hidden lg:block w-1/4 pl-6 self-start mt-4 translate-y-[-30px] translate-x-[50px]">
           <div
             className="relative h-[70vh] rounded-2xl overflow-hidden cursor-pointer group
-                       shadow-2xl shadow-black/40 ring-1 ring-black/10 backdrop-blur-[0.5px]"
+                       shadow-2xl shadow-black/40 ring-1 ring-black/30 backdrop-blur-[0.5px]"
             onClick={() => setCurrent((safeIdx + 1) % hotels.length)}
             title="Xem slide tiếp theo"
           >
@@ -98,7 +122,7 @@ export default function HeroHotelSlider({
               className="h-full w-full object-cover group-hover:scale-105 transition"
               loading="lazy"
             />
-            <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition" />
+            <div className="absolute inset-0 bg-black/35 group-hover:bg-black/45 transition" />
             <div className="absolute bottom-4 left-4 right-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] flex items-center justify-between gap-2">
               <div>
                 <span className="block text-sm opacity-90">Tiếp theo</span>
@@ -126,7 +150,11 @@ export default function HeroHotelSlider({
           <button
             key={i}
             onClick={() => setCurrent(i)}
-            className={`w-3 h-3 rounded-full transition ${i === safeIdx ? "bg-amber-500 scale-110" : "bg-white/70 hover:bg-white"}`}
+            className={`w-3 h-3 rounded-full transition ${
+              i === safeIdx
+                ? "bg-amber-500 scale-110"
+                : "bg-white/70 hover:bg-white"
+            }`}
             aria-label={`Chuyển đến slide ${i + 1}`}
           />
         ))}

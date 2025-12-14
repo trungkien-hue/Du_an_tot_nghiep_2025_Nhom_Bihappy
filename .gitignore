@@ -42,3 +42,5 @@ Thumbs.db
 # LOGS (chung)
 #######################
 *.log
+# Runtime upload files
+Backend/VirtualTravel/wwwroot/uploads/

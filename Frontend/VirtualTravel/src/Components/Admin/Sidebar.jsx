@@ -10,6 +10,7 @@ import {
   BedDouble,
   CalendarDays,
   LogOut,
+  Clock3,
 } from "lucide-react";
 
 const Item = ({ to, icon: IconComponent, color, children }) => (
@@ -58,6 +59,9 @@ export default function Sidebar() {
         </Item>
         <Item to="/admin/tours" icon={Plane} color="lime">
           <span>Quản lý Tour</span>
+        </Item>
+        <Item to="/admin/booking" icon={Clock3} color="rose">
+          <span>History</span>
         </Item>
         <Item to="/admin/reports" icon={BarChart3} color="rose">
           <span>Báo cáo</span>

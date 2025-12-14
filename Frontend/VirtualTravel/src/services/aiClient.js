@@ -55,3 +55,19 @@ export async function streamGemini(prompt, onText, signal) {
     }
   }
 }
+export async function saveCustomerInfo(info) {
+  // info: { fullName, phone, email, people, note }
+  try {
+    return await postJson(`${BASE}/ai/customer-info`, {
+      fullName: info.fullName,
+      phone: info.phone,
+      email: info.email,
+      people: info.people,
+      note: info.note,
+      source: info.source || "AI_CHAT"
+    });
+  } catch (err) {
+    console.warn("saveCustomerInfo error:", err);
+    throw err;
+  }
+}

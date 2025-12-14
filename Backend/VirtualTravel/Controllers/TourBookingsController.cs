@@ -49,6 +49,7 @@ namespace VirtualTravel.Controllers
             public string Phone { get; set; } = "";
             public string? Requests { get; set; }
 
+            // FE có thể gửi tổng tiền cuối cùng (ví dụ đã trừ 500k nếu thanh toán full)
             public decimal? TotalPrice { get; set; } // optional client
         }
 
@@ -77,8 +78,24 @@ namespace VirtualTravel.Controllers
             var unitAdult = Math.Max(0m, dto.UnitPriceAdult);
             var unitChild = Math.Max(0m, dto.UnitPriceChild);
 
-            // Tính tổng (server là nguồn sự thật)
-            var total = (unitAdult * adult) + (unitChild * child);
+            // ===== TÍNH TỔNG GIÁ TRÊN SERVER (nguồn sự thật) =====
+            var baseTotal = (unitAdult * adult) + (unitChild * child);
+
+            // Mặc định dùng baseTotal
+            var total = baseTotal;
+
+            // Nếu FE gửi TotalPrice (ví dụ đã trừ 500k khi thanh toán 100%)
+            // và giá đó hợp lý ( > 0 và <= baseTotal ) thì ưu tiên dùng
+            if (dto.TotalPrice.HasValue && dto.TotalPrice.Value > 0)
+            {
+                var clientTotal = dto.TotalPrice.Value;
+
+                // không cho phép clientTotal lớn hơn baseTotal để tránh bị chỉnh giá tăng/loạn
+                if (clientTotal <= baseTotal)
+                {
+                    total = clientTotal;
+                }
+            }
 
             // Map vào bảng Bookings dùng chung
             var booking = new Booking
@@ -103,7 +120,7 @@ namespace VirtualTravel.Controllers
                 // Hiển thị
                 Location = tour.Location,
 
-                // Tổng giá cuối cùng (nhất quán field TotalPrice)
+                // Tổng giá cuối cùng (có thể đã trừ 500k nếu thanh toán 100%)
                 TotalPrice = total,
                 NumberOfGuests = adult + child,
 

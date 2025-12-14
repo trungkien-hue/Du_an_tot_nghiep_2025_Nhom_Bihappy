@@ -2,10 +2,11 @@
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { chatTravel } from "../../services/aiClient";
+import { chatTravel, saveCustomerInfo } from "../../services/aiClient";
 
 const ASSET_BASE = import.meta.env.VITE_ASSET_BASE || "http://localhost:5059";
 const STORAGE_KEY = "vt_ai_chat_history";
+const CUSTOMER_INFO_KEY = "vt_ai_customer_info";
 
 /* Helpers */
 function resolveImageUrl(u) {
@@ -31,16 +32,39 @@ export default function GeminiChat() {
   const scrollRef = useRef(null);
   const inputRef = useRef(null);
 
-  /* 🔹 Load lịch sử khi mở trang */
+  /* 🔹 Load lịch sử khi mở trang + chèn form thông tin nếu chưa đăng nhập */
   useEffect(() => {
+    let initial = [];
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        setMessages(JSON.parse(saved));
-      } catch (e){
-        void(e);
+        initial = JSON.parse(saved) || [];
+      } catch (e) {
+        void e;
+        initial = [];
       }
     }
+
+    // Nếu KHÔNG có auth_token (khách chưa đăng nhập) thì chèn message kêu điền thông tin
+    const hasToken = !!localStorage.getItem("auth_token");
+    if (!hasToken) {
+      const alreadyHasForm = initial.some(
+        (m) => m?.payload?.kind === "customer-info"
+      );
+      if (!alreadyHasForm) {
+        initial.unshift({
+          role: "assistant",
+          payload: {
+            kind: "customer-info",
+            text:
+              "Chào bạn 👋 Trước khi tư vấn chi tiết, bạn giúp mình điền nhanh một số thông tin liên hệ nhé. " +
+              "Nếu bạn đã có tài khoản, bạn có thể đăng nhập để bỏ qua bước này.",
+          },
+        });
+      }
+    }
+
+    setMessages(initial);
   }, []);
 
   /* 🔹 Lưu lịch sử khi có thay đổi */
@@ -61,7 +85,10 @@ export default function GeminiChat() {
     const content = prompt.trim();
     if (!content) return;
 
-    setMessages((prev) => [...prev, { role: "user", payload: { text: content } }]);
+    setMessages((prev) => [
+      ...prev,
+      { role: "user", payload: { text: content } },
+    ]);
     setPrompt("");
     setLoading(true);
 
@@ -213,20 +240,189 @@ function AssistantPayloadRenderer({ payload }) {
   const text = payload?.text || "";
   const fn = payload?.function;
   const data = payload?.data;
+  const kind = payload?.kind;
 
   const hasTours =
     fn === "search_tours" && Array.isArray(data?.items) && data.items.length > 0;
   const hasHotels =
     fn === "search_hotels" && Array.isArray(data?.items) && data.items.length > 0;
   const hasSuggest = fn === "suggestions";
+  const showCustomerForm = kind === "customer-info";
 
   return (
     <div className="space-y-4">
       {text && <div className="whitespace-pre-line leading-relaxed">{text}</div>}
+      {showCustomerForm && <CustomerInfoForm />}
       {hasTours && <TourList items={data.items} showButton />}
       {hasHotels && <HotelList items={data.items} showButton />}
       {hasSuggest && <Suggestions payload={data} />}
     </div>
+  );
+}
+
+/* ============ Form thông tin khách hàng ============ */
+function CustomerInfoForm() {
+  const [form, setForm] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CUSTOMER_INFO_KEY);
+      if (saved) {
+        return (
+          JSON.parse(saved) || {
+            fullName: "",
+            phone: "",
+            email: "",
+            people: "",
+            note: "",
+          }
+        );
+      }
+    } catch {
+      /* ignore */
+    }
+    return {
+      fullName: "",
+      phone: "",
+      email: "",
+      people: "",
+      note: "",
+    };
+  });
+  const [submitted, setSubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  function handleChange(e) {
+    const { name, value } = e.target;
+    setForm((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.fullName.trim() || !form.phone.trim()) {
+      alert("Vui lòng nhập tối thiểu Họ tên và Số điện thoại.");
+      return;
+    }
+
+    // Lưu localStorage để autofill form đặt phòng
+    try {
+      localStorage.setItem(CUSTOMER_INFO_KEY, JSON.stringify(form));
+    } catch {
+      /* ignore */
+    }
+
+    // Gửi lên BE lưu vào bảng Users (Role = Lead)
+    setSaving(true);
+    try {
+      await saveCustomerInfo({
+        fullName: form.fullName,
+        phone: form.phone,
+        email: form.email,
+        people: form.people ? Number(form.people) : undefined,
+        note: form.note,
+        source: "AI_CHAT_FULLPAGE",
+      });
+      setSubmitted(true);
+    } catch (err) {
+      console.warn("saveCustomerInfo error:", err);
+      // vẫn cho submitted để user không phải nhập lại
+      setSubmitted(true);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (submitted) {
+    return (
+      <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-xl px-3 py-2">
+        ✅ Cảm ơn bạn, mình đã lưu thông tin liên hệ. Bạn cứ tiếp tục đặt câu hỏi
+        để mình tư vấn nhé.
+      </div>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="mt-2 space-y-3 text-sm bg-white rounded-xl border px-3 py-3"
+    >
+      <div className="grid md:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-semibold mb-1">
+            Họ và tên <span className="text-red-500">*</span>
+          </label>
+          <input
+            name="fullName"
+            value={form.fullName}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="Ví dụ: Nguyễn Văn A"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold mb-1">
+            Số điện thoại <span className="text-red-500">*</span>
+          </label>
+          <input
+            name="phone"
+            value={form.phone}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="Ví dụ: 09xx xxx xxx"
+          />
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-semibold mb-1">Email</label>
+          <input
+            name="email"
+            type="email"
+            value={form.email}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="(Không bắt buộc)"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-semibold mb-1">
+            Số khách (dự kiến)
+          </label>
+          <input
+            name="people"
+            type="number"
+            min="1"
+            value={form.people}
+            onChange={handleChange}
+            className="w-full border rounded-lg px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500"
+            placeholder="Ví dụ: 2"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold mb-1">
+          Ghi chú thêm (thời gian đi, ngân sách, yêu cầu đặc biệt…)
+        </label>
+        <textarea
+          name="note"
+          rows={2}
+          value={form.note}
+          onChange={handleChange}
+          className="w-full border rounded-lg px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+          placeholder="Ví dụ: Đi vào dịp lễ, ưu tiên gần biển, ngân sách ~5 triệu/2 người…"
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          type="submit"
+          disabled={saving}
+          className="px-4 py-1.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+        >
+          {saving ? "Đang lưu..." : "Lưu thông tin"}
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -251,9 +447,13 @@ function TourList({ items, showButton = false }) {
               />
               <div className="p-4 flex-1 flex flex-col">
                 <div className="flex-1">
-                  <h3 className="font-semibold text-lg mb-1 line-clamp-2">{t.Name}</h3>
+                  <h3 className="font-semibold text-lg mb-1 line-clamp-2">
+                    {t.Name}
+                  </h3>
                   <p className="text-gray-500 mb-1">{t.Location}</p>
-                  <p className="text-blue-600 font-semibold">{fmtVnd(t.Price)}</p>
+                  <p className="text-blue-600 font-semibold">
+                    {fmtVnd(t.Price)}
+                  </p>
                   <p className="text-sm text-gray-600">
                     {t.DurationDays ? `🕒 ${t.DurationDays} ngày` : ""}{" "}
                     {t.Rating ? `| ⭐ ${t.Rating}` : ""}
@@ -283,7 +483,8 @@ function HotelList({ items, showButton = false }) {
       <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-5">
         {items.map((h) => {
           const id = getHotelId(h);
-          const priceToShow = h.MinAvailablePrice ?? h.Price ?? h.PricePerNight; // 🔸 ưu tiên Availability.Price
+          const priceToShow =
+            h.MinAvailablePrice ?? h.Price ?? h.PricePerNight; // 🔸 ưu tiên Availability.Price
           return (
             <div
               key={id ?? h?.Name}
@@ -297,12 +498,16 @@ function HotelList({ items, showButton = false }) {
               />
               <div className="p-4 flex-1 flex flex-col">
                 <div className="flex-1">
-                  <h3 className="font-semibold text-lg mb-1 line-clamp-2">{h.Name}</h3>
+                  <h3 className="font-semibold text-lg mb-1 line-clamp-2">
+                    {h.Name}
+                  </h3>
                   <p className="text-gray-500 mb-1">{h.Location}</p>
                   <p className="text-blue-600 font-semibold">
                     {fmtVnd(priceToShow)}
                   </p>
-                  {h.Rating && <p className="text-sm text-gray-600">⭐ {h.Rating}/5</p>}
+                  {h.Rating && (
+                    <p className="text-sm text-gray-600">⭐ {h.Rating}/5</p>
+                  )}
                 </div>
                 {showButton && id && (
                   <Link

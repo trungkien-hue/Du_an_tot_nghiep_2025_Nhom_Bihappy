@@ -17,7 +17,8 @@ namespace VirtualTravel.Services.Notifications
 
         public NotificationPublisher(AppDbContext db, IHubContext<NotificationHub> hub)
         {
-            _db = db; _hub = hub;
+            _db = db;
+            _hub = hub;
         }
 
         public async Task AddAndBroadcastAsync(string title, string message, string? targetRole = null, int? targetUserId = null)
@@ -26,8 +27,8 @@ namespace VirtualTravel.Services.Notifications
             {
                 Title = title,
                 Message = message,
-                TargetRole = targetRole,     // null → broadcast cho nhóm chung Staff/Admin
-                TargetUserID = targetUserId, // nếu muốn gửi riêng 1 user
+                TargetRole = targetRole,
+                TargetUserID = targetUserId,
                 IsRead = false,
                 CreatedAt = DateTime.UtcNow
             };
@@ -35,7 +36,6 @@ namespace VirtualTravel.Services.Notifications
             _db.Notifications.Add(noti);
             await _db.SaveChangesAsync();
 
-            // Payload đẩy ra client
             var payload = new
             {
                 noti.NotificationID,
@@ -43,21 +43,26 @@ namespace VirtualTravel.Services.Notifications
                 noti.Message,
                 noti.TargetRole,
                 noti.TargetUserID,
-                noti.CreatedAt
+                noti.CreatedAt,
+                Type = "NewNotification"
             };
 
             if (targetUserId.HasValue)
             {
-                await _hub.Clients.Group($"user:{targetUserId.Value}").SendAsync("NewNotification", payload);
+                await _hub.Clients.Group($"user:{targetUserId.Value}")
+                    .SendAsync("NewNotification", payload);
             }
             else if (!string.IsNullOrWhiteSpace(targetRole))
             {
-                await _hub.Clients.Group($"role:{targetRole}").SendAsync("NewNotification", payload);
+                // ⭐ CHỈ GỬI ĐẾN "Staff" hoặc "Admin"
+                await _hub.Clients.Group(targetRole)
+                    .SendAsync("NewNotification", payload);
             }
             else
             {
-                // gửi chung tới Admin/Staff
-                await _hub.Clients.Group("role:StaffOrAdmin").SendAsync("NewNotification", payload);
+                // Gửi chung Staff + Admin
+                await _hub.Clients.Groups("Staff", "Admin")
+                    .SendAsync("NewNotification", payload);
             }
         }
     }

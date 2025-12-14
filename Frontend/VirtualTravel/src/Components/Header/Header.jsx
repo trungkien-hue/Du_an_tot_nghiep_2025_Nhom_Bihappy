@@ -39,6 +39,9 @@ export default function Header() {
   const isProfilePage = location.pathname.startsWith("/account");
   const isMyOrdersPage = location.pathname.startsWith("/myorder");
   const isAboutPage = location.pathname.startsWith("/about");
+  const isPaymentPage = location.pathname.startsWith("/checkout");
+  const isRegisterPage = location.pathname.startsWith("/register");
+
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -83,7 +86,14 @@ export default function Header() {
   ];
 
   // 👇 điều kiện header nền trắng (chữ đen)
-  const isLightHeader = (scrolled || isProfilePage || isMyOrdersPage) && !isAboutPage;
+  const isLightHeader =
+  (scrolled ||
+    isProfilePage ||
+    isMyOrdersPage ||
+    isPaymentPage ||
+    isRegisterPage) &&
+  !isAboutPage;
+
 
   return (
     <header

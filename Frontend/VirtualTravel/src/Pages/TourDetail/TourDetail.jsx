@@ -3,10 +3,10 @@ import { useState, useMemo, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import tourDetailAPI from "../../services/tourDetailAPI.jsx";
-import bookingTourAPI from "../../services/bookingTourAPI.jsx";
 
-const ASSET_BASE = import.meta.env.VITE_ASSET_BASE || "http://localhost:5059";
-const API_BASE = ASSET_BASE; // dùng chung host cho API
+const API_BASE = import.meta.env.VITE_API_BASE || "https://localhost:7059";
+const ASSET_BASE = API_BASE; // nếu ảnh cũng nằm cùng domain
+
 function resolveImageUrl(u) {
   if (!u) return "/images/default-tour.jpg";
   let url = String(u).trim().replace(/\\/g, "/");
@@ -25,7 +25,8 @@ function readAuthRole() {
       if (!role) return null;
       return String(Array.isArray(role) ? role[0] : role).toLowerCase();
     }
-    const userRaw = localStorage.getItem("user") || localStorage.getItem("vt_user");
+    const userRaw =
+      localStorage.getItem("user") || localStorage.getItem("vt_user");
     if (userRaw) {
       const u = JSON.parse(userRaw);
       const role = u?.Role ?? u?.role ?? null;
@@ -109,13 +110,17 @@ export default function ChiTietTour() {
   const [err, setErr] = useState("");
 
   const [reviews, setReviews] = useState([]);
-  const [newReview, setNewReview] = useState({ name: "", rating: 5, text: "" });
+  const [newReview, setNewReview] = useState({
+    name: "",
+    rating: 5,
+    text: "",
+  });
   const [submitting, setSubmitting] = useState(false);
 
-  // ⭐ Ảnh review (mới)
+  // Ảnh review
   const [files, setFiles] = useState([]);
 
-  // ⭐ Lightbox state
+  // Lightbox state
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxImages, setLightboxImages] = useState([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -133,6 +138,7 @@ export default function ChiTietTour() {
   const money2 = (n) => Number(n || 0).toFixed(2);
   const clamp = (n, min, max) => Math.max(min, Math.min(max, Number(n) || 0));
 
+  /* ===== Load tour detail ===== */
   useEffect(() => {
     let mounted = true;
     async function load() {
@@ -147,15 +153,20 @@ export default function ChiTietTour() {
         setReviewCount(Number(data?.ReviewCount || 0));
       } catch (e) {
         if (!mounted) return;
-        setErr(typeof e === "string" ? e : "Không tải được chi tiết tour");
+        setErr(
+          typeof e === "string" ? e : "Không tải được chi tiết tour"
+        );
       } finally {
         if (mounted) setLoading(false);
       }
     }
     load();
-    return () => (mounted = false);
+    return () => {
+      mounted = false;
+    };
   }, [id]);
 
+  /* ===== Load reviews ===== */
   useEffect(() => {
     let mounted = true;
     async function loadReviews() {
@@ -168,13 +179,28 @@ export default function ChiTietTour() {
       }
     }
     loadReviews();
-    return () => (mounted = false);
+    return () => {
+      mounted = false;
+    };
   }, [id]);
 
-  const includes = useMemo(() => tachDanhSach(tour?.Includes), [tour?.Includes]);
-  const excludes = useMemo(() => tachDanhSach(tour?.Excludes), [tour?.Excludes]);
-  const highlights = useMemo(() => tachDanhSach(tour?.Highlights), [tour?.Highlights]);
-  const itineraryDays = useMemo(() => tachHanhTrinh(tour?.Itinerary), [tour?.Itinerary]);
+  /* ===== Derived data from tour ===== */
+  const includes = useMemo(
+    () => tachDanhSach(tour?.Includes),
+    [tour?.Includes]
+  );
+  const excludes = useMemo(
+    () => tachDanhSach(tour?.Excludes),
+    [tour?.Excludes]
+  );
+  const highlights = useMemo(
+    () => tachDanhSach(tour?.Highlights),
+    [tour?.Highlights]
+  );
+  const itineraryDays = useMemo(
+    () => tachHanhTrinh(tour?.Itinerary),
+    [tour?.Itinerary]
+  );
 
   const currency = tour?.Currency ?? "VND";
   const basePrice = Number(tour?.Price ?? 0);
@@ -193,51 +219,67 @@ export default function ChiTietTour() {
     [totalPrice, depositPercent]
   );
 
-  async function handleBook() {
+  // ID tour hiện tại, dùng cho đặt tour / thanh toán
+  const currentTourId = tour?.TourID ?? tour?.id ?? Number(id);
+
+  /* ===== Đặt tour -> chuyển sang trang thanh toán ===== */
+  function handleBook() {
     if (!startDate) return alert("Vui lòng chọn ngày khởi hành.");
     if (!fullName.trim()) return alert("Vui lòng nhập họ tên người đặt.");
     if (!phone.trim()) return alert("Vui lòng nhập số điện thoại.");
 
-    try {
-      const payload = {
-        TourID: tour.TourID ?? tour.id,
-        TourAvailabilityID: null,
-        StartDate: startDate,
-        AdultGuests: clamp(guestCounts.adult, 0, 99),
-        ChildGuests: clamp(guestCounts.child, 0, 99),
-        UnitPriceAdult: priceAdult,
-        UnitPriceChild: priceChild,
-        FullName: fullName.trim(),
-        Phone: phone.trim(),
-        Requests: "",
-        TotalPrice: totalPrice, // server có thể tự tính lại
-      };
-      await bookingTourAPI.create(payload);
-      alert("Đặt tour thành công!");
-      setFullName("");
-      setPhone("");
-    } catch (e) {
-      console.error(e);
-      alert("Đặt tour thất bại: " + (e?.response?.data?.message || e?.message || "Unknown error"));
+    if (!currentTourId) {
+      alert(
+        "Không tìm được TourID, vui lòng tải lại trang hoặc chọn lại tour."
+      );
+      return;
     }
+
+    const payload = {
+      type: "tour",
+
+      // gửi đủ cả 2 key để PaymentPage/BE dùng
+      TourID: currentTourId,
+      tourId: currentTourId,
+
+      productName: tour?.Name ?? tour?.Title ?? "Tour du lịch",
+      startDate,
+      guestCounts,
+      totalPrice,
+      depositDue,
+      fullName: fullName.trim(),
+      phone: phone.trim(),
+
+      // thêm info nếu sau này cần
+      priceAdult,
+      priceChild,
+      currency,
+      depositPercent,
+    };
+
+    // route tới trang thanh toán
+    navigate("/checkout", { state: payload });
   }
 
-  // ⭐ chọn ảnh review
-  function onSelectFiles(e) {
+  /* ===== chọn ảnh review ===== */
+  const handleSelectFiles = (e) => {
     const list = Array.from(e.target.files || []);
     const images = list.filter((f) => f.type.startsWith("image/")).slice(0, 6);
     setFiles(images);
-  }
+  };
 
-  // ⭐ mở Lightbox
+  /* ===== mở Lightbox ===== */
   const openLightbox = (imgs, startIndex = 0) => {
     const normalized = (imgs || []).map((im) => resolveImageUrl(im));
     if (!normalized.length) return;
     setLightboxImages(normalized);
-    setLightboxIndex(Math.max(0, Math.min(startIndex, normalized.length - 1)));
+    setLightboxIndex(
+      Math.max(0, Math.min(startIndex, normalized.length - 1))
+    );
     setLightboxOpen(true);
   };
 
+  /* ===== gửi review ===== */
   async function handleSubmitReview(e) {
     e.preventDefault();
     const name = newReview.name.trim();
@@ -248,7 +290,7 @@ export default function ChiTietTour() {
     try {
       setSubmitting(true);
 
-      // ----- OPTIMISTIC UPDATE: hiển thị ngay -----
+      // Optimistic update
       const tempImgs = files.map((f) => URL.createObjectURL(f));
       const optimistic = {
         ReviewID: `temp-${Date.now()}`,
@@ -262,19 +304,21 @@ export default function ChiTietTour() {
       setReviewCount((c) => c + 1);
       setAvgRating((prevAvg) => {
         const list = [optimistic, ...reviews];
-        const sum = list.reduce((s, r) => s + Number(r.Rating ?? r.rating ?? 0), 0);
+        const sum = list.reduce(
+          (s, r) => s + Number(r.Rating ?? r.rating ?? 0),
+          0
+        );
         return list.length ? sum / list.length : prevAvg;
       });
 
-      // ----- Gửi multipart lên server -----
+      // Gửi multipart lên server
       const fd = new FormData();
       fd.append("TourId", String(id));
       fd.append("UserName", name);
       fd.append("Rating", String(rating));
       fd.append("Comment", text);
-      files.forEach((f) => fd.append("Images", f)); // key "Images" khớp backend
+      files.forEach((f) => fd.append("Images", f));
 
-      // Gọi thẳng endpoint nếu service chưa hỗ trợ multipart
       const resp = await fetch(`${API_BASE}/api/tour/reviews`, {
         method: "POST",
         body: fd,
@@ -285,7 +329,7 @@ export default function ChiTietTour() {
         throw new Error(msg || `HTTP ${resp.status}`);
       }
 
-      // ----- Đồng bộ lại từ server -----
+      // Đồng bộ lại từ server
       const [rvRes, tourRes] = await Promise.all([
         tourDetailAPI.getReviews(id),
         tourDetailAPI.getById(id),
@@ -295,7 +339,6 @@ export default function ChiTietTour() {
       setAvgRating(Number(tdata?.Rating || 0));
       setReviewCount(Number(tdata?.ReviewCount || 0));
 
-      // reset form
       setNewReview({ name: "", rating: 5, text: "" });
       setFiles([]);
     } catch (err) {
@@ -306,18 +349,32 @@ export default function ChiTietTour() {
     }
   }
 
+  /* ===== Guard render ===== */
   if (loading) {
-    return <div className="min-h-screen grid place-items-center text-neutral-600">Đang tải chi tiết tour...</div>;
+    return (
+      <div className="min-h-screen grid place-items-center text-neutral-600">
+        Đang tải chi tiết tour...
+      </div>
+    );
   }
   if (err) {
-    return <div className="min-h-screen grid place-items-center text-red-600">{err}</div>;
+    return (
+      <div className="min-h-screen grid place-items-center text-red-600">
+        {err}
+      </div>
+    );
   }
   if (!tour) {
-    return <div className="min-h-screen grid place-items-center text-neutral-600">Không có dữ liệu tour.</div>;
+    return (
+      <div className="min-h-screen grid place-items-center text-neutral-600">
+        Không có dữ liệu tour.
+      </div>
+    );
   }
 
   const tourId = tour.TourID ?? tour.id;
 
+  /* ===== JSX ===== */
   return (
     <div className="min-h-screen bg-neutral-50 text-neutral-900">
       {/* Hero */}
@@ -344,11 +401,12 @@ export default function ChiTietTour() {
                     {tour.Name}
                   </h1>
                   <p className="max-w-xl mb-6 !text-white/95 drop-shadow-[0_2px_6px_rgba(0,0,0,0.8)]">
-                    {tour.Location} • {tour.Category} • ⭐ {avgRating?.toFixed?.(1) ?? avgRating} ({reviewCount})
+                    {tour.Location} • {tour.Category} • ⭐
+                    {avgRating?.toFixed?.(1) ?? avgRating} ({reviewCount})
                   </p>
                 </div>
 
-                {readAuthRole() === "admin" && (
+                {_isAdmin && (
                   <div className="flex flex-col items-end gap-2">
                     <button
                       onClick={() => navigate(`/admin/tours?create=1`)}
@@ -358,13 +416,17 @@ export default function ChiTietTour() {
                     </button>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => navigate(`/admin/tours?editId=${tourId}`)}
+                        onClick={() =>
+                          navigate(`/admin/tours?editId=${tourId}`)
+                        }
                         className="rounded-lg bg-yellow-500 px-3 py-2 text-white hover:bg-yellow-600"
                       >
                         Sửa tour này
                       </button>
                       <button
-                        onClick={() => navigate(`/admin/tours?deleteId=${tourId}`)}
+                        onClick={() =>
+                          navigate(`/admin/tours?deleteId=${tourId}`)
+                        }
                         className="rounded-lg bg-rose-600 px-3 py-2 text-white hover:bg-rose-700"
                       >
                         Xoá tour này
@@ -376,7 +438,10 @@ export default function ChiTietTour() {
 
               <div className="mt-4 flex flex-wrap gap-2">
                 {highlights.map((h) => (
-                  <span key={h} className="text-xs bg-white/20 border border-white/30 px-2 py-1 rounded-full">
+                  <span
+                    key={h}
+                    className="text-xs bg-white/20 border border-white/30 px-2 py-1 rounded-full"
+                  >
                     {h}
                   </span>
                 ))}
@@ -392,15 +457,26 @@ export default function ChiTietTour() {
         <div className="lg:col-span-2 space-y-8">
           <section className="rounded-2xl bg-white border border-neutral-200 shadow-sm p-6">
             <h2 className="text-xl font-semibold">Tổng quan</h2>
-            <p className="mt-3 text-neutral-700 leading-relaxed">{tour.Description}</p>
+            <p className="mt-3 text-neutral-700 leading-relaxed">
+              {tour.Description}
+            </p>
 
             <dl className="mt-6 grid gap-4 sm:grid-cols-2">
               <ThongTin label="Điểm khởi hành" value={tour.StartLocation} />
               <ThongTin label="Điểm kết thúc" value={tour.EndLocation} />
-              <ThongTin label="Thời lượng" value={`${tour.DurationDays ?? ""} ngày`} />
-              <ThongTin label="Số lượng tối đa" value={`${tour.MaxGroupSize ?? ""} người`} />
+              <ThongTin
+                label="Thời lượng"
+                value={`${tour.DurationDays ?? ""} ngày`}
+              />
+              <ThongTin
+                label="Số lượng tối đa"
+                value={`${tour.MaxGroupSize ?? ""} người`}
+              />
               <ThongTin label="Phương tiện" value={tour.TransportType} />
-              <ThongTin label="Bao gồm HDV" value={tour.GuideIncluded ? "Có" : "Không"} />
+              <ThongTin
+                label="Bao gồm HDV"
+                value={tour.GuideIncluded ? "Có" : "Không"}
+              />
             </dl>
           </section>
 
@@ -421,7 +497,10 @@ export default function ChiTietTour() {
                 <h3 className="text-lg font-semibold">Bao gồm</h3>
                 <ul className="mt-3 space-y-2">
                   {includes.map((x, i) => (
-                    <li key={i} className="flex items-start gap-2 text-neutral-700">
+                    <li
+                      key={i}
+                      className="flex items-start gap-2 text-neutral-700"
+                    >
                       <span aria-hidden>✔️</span>
                       <span>{x}</span>
                     </li>
@@ -432,7 +511,10 @@ export default function ChiTietTour() {
                 <h3 className="text-lg font-semibold">Không bao gồm</h3>
                 <ul className="mt-3 space-y-2">
                   {excludes.map((x, i) => (
-                    <li key={i} className="flex items-start gap-2 text-neutral-700">
+                    <li
+                      key={i}
+                      className="flex items-start gap-2 text-neutral-700"
+                    >
                       <span aria-hidden>⛔</span>
                       <span>{x}</span>
                     </li>
@@ -444,41 +526,56 @@ export default function ChiTietTour() {
             {tour.Notes && (
               <div className="mt-6">
                 <h3 className="text-lg font-semibold">Ghi chú</h3>
-                <p className="mt-2 text-neutral-700 leading-relaxed">{tour.Notes}</p>
+                <p className="mt-2 text-neutral-700 leading-relaxed">
+                  {tour.Notes}
+                </p>
               </div>
             )}
           </section>
 
-          {/* ⭐ Đánh giá có upload ảnh + Lightbox */}
+          {/* Đánh giá */}
           <section className="rounded-2xl bg-white border border-neutral-200 shadow-sm p-6">
             <h2 className="text-xl font-semibold">Đánh giá</h2>
 
-            <form onSubmit={handleSubmitReview} className="mt-4 grid gap-3 sm:grid-cols-3">
+            <form
+              onSubmit={handleSubmitReview}
+              className="mt-4 grid gap-3 sm:grid-cols-3"
+            >
               <input
                 className="rounded-xl border border-neutral-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 placeholder="Tên của bạn"
                 value={newReview.name}
-                onChange={(e) => setNewReview((r) => ({ ...r, name: e.target.value }))}
+                onChange={(e) =>
+                  setNewReview((r) => ({ ...r, name: e.target.value }))
+                }
                 required
               />
               <select
                 className="rounded-xl border border-neutral-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 value={newReview.rating}
-                onChange={(e) => setNewReview((r) => ({ ...r, rating: Number(e.target.value) }))}
+                onChange={(e) =>
+                  setNewReview((r) => ({
+                    ...r,
+                    rating: Number(e.target.value),
+                  }))
+                }
               >
                 {[5, 4, 3, 2, 1].map((n) => (
-                  <option key={n} value={n}>{n} ★</option>
+                  <option key={n} value={n}>
+                    {n} ★
+                  </option>
                 ))}
               </select>
 
-              {/* input ảnh */}
               <div>
-                <label className="block text-sm text-neutral-600 mb-1">Ảnh (tối đa 6)</label>
+                <label className="block text-sm text-neutral-600 mb-1">
+                  Ảnh (tối đa 6)
+                </label>
                 <input
                   type="file"
                   accept="image/*"
                   multiple
-                  onChange={onSelectFiles}
+                  onChange={handleSelectFiles}
                   className="block w-full text-sm file:mr-3 file:px-3 file:py-2 file:rounded-lg file:border file:border-neutral-300 file:bg-white hover:file:border-neutral-400"
                 />
               </div>
@@ -487,12 +584,13 @@ export default function ChiTietTour() {
                 className="sm:col-span-3 rounded-xl border border-neutral-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-neutral-900"
                 placeholder="Chia sẻ trải nghiệm của bạn..."
                 value={newReview.text}
-                onChange={(e) => setNewReview((r) => ({ ...r, text: e.target.value }))}
+                onChange={(e) =>
+                  setNewReview((r) => ({ ...r, text: e.target.value }))
+                }
                 rows={3}
                 required
               />
 
-              {/* preview ảnh -> click mở Lightbox */}
               {files.length > 0 && (
                 <div className="sm:col-span-3 grid grid-cols-3 md:grid-cols-6 gap-2">
                   {files.map((f, i) => {
@@ -505,7 +603,11 @@ export default function ChiTietTour() {
                         className="aspect-square rounded-lg overflow-hidden ring-1 ring-neutral-200 hover:ring-neutral-300"
                         title="Xem ảnh lớn"
                       >
-                        <img src={url} alt={`preview-${i}`} className="h-full w-full object-cover" />
+                        <img
+                          src={url}
+                          alt={`preview-${i}`}
+                          className="h-full w-full object-cover"
+                        />
                       </button>
                     );
                   })}
@@ -526,19 +628,33 @@ export default function ChiTietTour() {
                 const imgs = Array.isArray(rv.Images) ? rv.Images : [];
                 const normalized = imgs.map((im) => resolveImageUrl(im));
                 return (
-                  <li key={rv.ReviewID ?? rv.id ?? `rv-${idx}`} className="border border-neutral-200 rounded-xl p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium">{rv.UserName ?? rv.name ?? "Ẩn danh"}</div>
+                  <li
+                    key={rv.ReviewID ?? rv.id ?? `rv-${idx}`}
+                    className="border border-neutral-200 rounded-xl p-4"
+                  >
+                    <div className="flex items-center justify_between">
+                      <div className="font-medium">
+                        {rv.UserName ?? rv.name ?? "Ẩn danh"}
+                      </div>
                       <div className="text-sm text-neutral-500">
-                        {(rv.CreatedAt ?? rv.date) ? String(rv.CreatedAt ?? rv.date).toString().slice(0, 10) : ""}
+                        {(rv.CreatedAt ?? rv.date)
+                          ? String(rv.CreatedAt ?? rv.date)
+                              .toString()
+                              .slice(0, 10)
+                          : ""}
                       </div>
                     </div>
-                    <div className="mt-1 text-amber-600" aria-label={`${rv.Rating ?? rv.rating} trên 5 sao`}>
-                      {"★".repeat(rv.Rating ?? rv.rating ?? 0)}{"☆".repeat(5 - (rv.Rating ?? rv.rating ?? 0))}
+                    <div
+                      className="mt-1 text-amber-600"
+                      aria-label={`${rv.Rating ?? rv.rating} trên 5 sao`}
+                    >
+                      {"★".repeat(rv.Rating ?? rv.rating ?? 0)}
+                      {"☆".repeat(5 - (rv.Rating ?? rv.rating ?? 0))}
                     </div>
-                    <p className="mt-2 text-neutral-700 leading-relaxed">{rv.Comment ?? rv.text}</p>
+                    <p className="mt-2 text-neutral-700 leading-relaxed">
+                      {rv.Comment ?? rv.text}
+                    </p>
 
-                    {/* ảnh review -> Lightbox thay vì mở tab */}
                     {normalized.length > 0 && (
                       <div className="mt-3 grid grid-cols-3 md:grid-cols-6 gap-2">
                         {normalized.map((src, i2) => (
@@ -549,7 +665,11 @@ export default function ChiTietTour() {
                             className="block aspect-square rounded-lg overflow-hidden ring-1 ring-neutral-200 hover:ring-neutral-300"
                             title="Xem ảnh lớn"
                           >
-                            <img src={src} alt={`rv-${i2}`} className="h-full w-full object-cover" />
+                            <img
+                              src={src}
+                              alt={`rv-${i2}`}
+                              className="h-full w-full object-cover"
+                            />
                           </button>
                         ))}
                       </div>
@@ -565,7 +685,9 @@ export default function ChiTietTour() {
         <aside className="lg:col-span-1">
           <div className="sticky top-6 rounded-2xl bg-white border border-neutral-200 shadow-sm p-6">
             <div>
-              <label className="text-sm font-medium text-neutral-700">Tên tour</label>
+              <label className="text-sm font-medium text-neutral-700">
+                Tên tour
+              </label>
               <input
                 type="text"
                 className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 bg-neutral-50 text-neutral-700"
@@ -579,13 +701,19 @@ export default function ChiTietTour() {
                 <div className="text-2xl font-bold">
                   {currency} {money2(priceAdult)}
                 </div>
-                <div className="text-sm text-neutral-600">Giá cơ bản / người lớn</div>
+                <div className="text-sm text-neutral-600">
+                  Giá cơ bản / người lớn
+                </div>
               </div>
-              <div className="text-sm text-neutral-700">Cọc {depositPercent}%</div>
+              <div className="text-sm text-neutral-700">
+                Cọc {depositPercent}%
+              </div>
             </div>
 
             <div className="mt-6 grid gap-3">
-              <p className="text-center text-neutral-800 font-medium">Chọn ngày khởi hành</p>
+              <p className="text-center text-neutral-800 font-medium">
+                Chọn ngày khởi hành
+              </p>
               <input
                 type="date"
                 className="rounded-xl border border-neutral-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-neutral-900"
@@ -598,19 +726,25 @@ export default function ChiTietTour() {
                   label="Người lớn"
                   value={guestCounts.adult}
                   min={1}
-                  onChange={(v) => setGuestCounts((s) => ({ ...s, adult: clamp(v, 1, 99) }))}
+                  onChange={(v) =>
+                    setGuestCounts((s) => ({ ...s, adult: clamp(v, 1, 99) }))
+                  }
                 />
                 <NumberInput
                   label="Trẻ em"
                   value={guestCounts.child}
                   min={0}
-                  onChange={(v) => setGuestCounts((s) => ({ ...s, child: clamp(v, 0, 99) }))}
+                  onChange={(v) =>
+                    setGuestCounts((s) => ({ ...s, child: clamp(v, 0, 99) }))
+                  }
                 />
               </div>
 
               <div className="grid gap-3">
                 <div>
-                  <label className="text-sm font-medium text-neutral-700">Họ tên người đặt</label>
+                  <label className="text-sm font-medium text-neutral-700">
+                    Họ tên người đặt
+                  </label>
                   <input
                     type="text"
                     placeholder="VD: Nguyễn Văn A"
@@ -622,7 +756,9 @@ export default function ChiTietTour() {
                   />
                 </div>
                 <div>
-                  <label className="text-sm font-medium text-neutral-700">Số điện thoại</label>
+                  <label className="text-sm font-medium text-neutral-700">
+                    Số điện thoại
+                  </label>
                   <input
                     type="tel"
                     placeholder="VD: 0912345678"
@@ -638,10 +774,27 @@ export default function ChiTietTour() {
               <hr className="my-4 border-neutral-200" />
 
               <div className="text-sm">
-                <Row label="Người lớn" value={`${guestCounts.adult} × ${currency} ${money2(priceAdult)}`} />
-                <Row label="Trẻ em" value={`${guestCounts.child} × ${currency} ${money2(priceChild)}`} />
-                <Row label="Tổng" value={`${currency} ${money2(totalPrice)}`} bold />
-                <Row label={`Tiền cọc ${depositPercent}%`} value={`${currency} ${money2(depositDue)}`} />
+                <Row
+                  label="Người lớn"
+                  value={`${guestCounts.adult} × ${currency} ${money2(
+                    priceAdult
+                  )}`}
+                />
+                <Row
+                  label="Trẻ em"
+                  value={`${guestCounts.child} × ${currency} ${money2(
+                    priceChild
+                  )}`}
+                />
+                <Row
+                  label="Tổng"
+                  value={`${currency} ${money2(totalPrice)}`}
+                  bold
+                />
+                <Row
+                  label={`Tiền cọc ${depositPercent}%`}
+                  value={`${currency} ${money2(depositDue)}`}
+                />
               </div>
 
               <button
@@ -650,7 +803,9 @@ export default function ChiTietTour() {
               >
                 Đặt tour ngay
               </button>
-              <p className="text-xs text-neutral-500 mt-2">{tour.CancellationPolicy}</p>
+              <p className="text-xs text-neutral-500 mt-2">
+                {tour.CancellationPolicy}
+              </p>
             </div>
           </div>
         </aside>
@@ -662,12 +817,20 @@ export default function ChiTietTour() {
         images={lightboxImages}
         index={lightboxIndex}
         onClose={() => setLightboxOpen(false)}
-        onPrev={() => setLightboxIndex((i) => (i - 1 + lightboxImages.length) % lightboxImages.length)}
-        onNext={() => setLightboxIndex((i) => (i + 1) % lightboxImages.length)}
+        onPrev={() =>
+          setLightboxIndex(
+            (i) => (i - 1 + lightboxImages.length) % lightboxImages.length
+          )
+        }
+        onNext={() =>
+          setLightboxIndex((i) => (i + 1) % lightboxImages.length)
+        }
       />
     </div>
   );
 }
+
+/* ===== Small helpers ===== */
 
 function ThongTin({ label, value }) {
   return (
@@ -681,7 +844,13 @@ function ThongTin({ label, value }) {
 function Row({ label, value, bold }) {
   return (
     <div className="flex items-center justify-between py-1">
-      <span className={`text-neutral-600 ${bold ? "font-semibold text-neutral-800" : ""}`}>{label}</span>
+      <span
+        className={`text-neutral-600 ${
+          bold ? "font-semibold text-neutral-800" : ""
+        }`}
+      >
+        {label}
+      </span>
       <span className={bold ? "font-semibold" : ""}>{value}</span>
     </div>
   );
@@ -694,7 +863,14 @@ function NumberInput({ label, value, min = 0, onChange }) {
     <div>
       <label className="text-sm font-medium">{label}</label>
       <div className="mt-1 flex items-center rounded-xl border border-neutral-300 overflow-hidden">
-        <button type="button" className="px-3 py-2 text-lg" onClick={() => set((value || 0) - 1)} aria-label={`Giảm ${label}`}>–</button>
+        <button
+          type="button"
+          className="px-3 py-2 text-lg"
+          onClick={() => set((value || 0) - 1)}
+          aria-label={`Giảm ${label}`}
+        >
+          –
+        </button>
         <input
           type="number"
           className="w-full px-3 py-2 text-center focus:outline-none"
@@ -703,7 +879,14 @@ function NumberInput({ label, value, min = 0, onChange }) {
           value={value ?? min}
           onChange={(e) => set(e.target.value)}
         />
-        <button type="button" className="px-3 py-2 text-lg" onClick={() => set((value || 0) + 1)} aria-label={`Tăng ${label}`}>+</button>
+        <button
+          type="button"
+          className="px-3 py-2 text-lg"
+          onClick={() => set((value || 0) + 1)}
+          aria-label={`Tăng ${label}`}
+        >
+          +
+        </button>
       </div>
     </div>
   );
