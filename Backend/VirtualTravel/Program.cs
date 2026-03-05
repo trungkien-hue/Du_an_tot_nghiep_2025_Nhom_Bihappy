@@ -27,7 +27,6 @@ builder.Services.AddControllers()
     .AddJsonOptions(o =>
     {
         o.JsonSerializerOptions.PropertyNameCaseInsensitive = true;
-
         o.JsonSerializerOptions.PropertyNamingPolicy = null;
         o.JsonSerializerOptions.DictionaryKeyPolicy = null;
         o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -72,13 +71,9 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = builder.Configuration["Jwt:Issuer"],
         ValidAudience = builder.Configuration["Jwt:Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(builder.Configuration["Jwt:Key"])),
-        ClockSkew = TimeSpan.Zero,
-        // RoleClaimType = "role"
+        ClockSkew = TimeSpan.Zero
     };
 
-    // ✅ Bắt token cho cả negotiate & websocket ở 2 Hub:
-    //    - /hubs/notifications (staff/admin)
-    //    - /hubs/partner-notifications (hotel/partner)
     options.Events = new JwtBearerEvents
     {
         OnMessageReceived = context =>
@@ -90,12 +85,10 @@ builder.Services.AddAuthentication(options =>
 
             if (isHub)
             {
-                // 1) WebSocket/SSE → query ?access_token=
                 var accessToken = context.Request.Query["access_token"];
                 if (!string.IsNullOrEmpty(accessToken))
                     context.Token = accessToken;
 
-                // 2) Negotiate (HTTP) → header Authorization: Bearer ...
                 if (string.IsNullOrEmpty(context.Token))
                 {
                     var auth = context.Request.Headers.Authorization.ToString();
@@ -111,37 +104,19 @@ builder.Services.AddAuthentication(options =>
     };
 });
 
+// ✅ Cập nhật CORS để cho phép Vercel và các nguồn khác truy cập
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Dev", policy =>
         policy
-            .SetIsOriginAllowed(origin =>
-            {
-                if (string.IsNullOrEmpty(origin)) return false;
-                try
-                {
-                    var uri = new Uri(origin);
-                    var host = uri.Host.ToLowerInvariant();
-                    if (origin.StartsWith("http://localhost:5173") ||
-                        origin.StartsWith("https://localhost:5173") ||
-                        origin.StartsWith("http://localhost:5174") ||
-                        origin.StartsWith("https://localhost:5174") ||
-                        origin.StartsWith("http://127.0.0.1:5173") ||
-                        origin.StartsWith("https://127.0.0.1:5173")) return true;
-                    if (host.EndsWith(".asse.devtunnels.ms")) return true;
-                    return false;
-                }
-                catch { return false; }
-            })
+            .AllowAnyOrigin()
             .AllowAnyHeader()
             .AllowAnyMethod()
-            .AllowCredentials()
-            .WithExposedHeaders("Content-Type", "Cache-Control")
+    // .AllowCredentials() // Lưu ý: Không dùng AllowCredentials chung với AllowAnyOrigin
     );
 });
 
 builder.Services.AddSignalR();
-
 builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection("Gemini"));
 builder.Services.AddTransient<GeminiAuthHandler>();
 builder.Services.AddScoped<TourSearchService>();
@@ -153,8 +128,6 @@ builder.Services.AddHttpClient<IGeminiClient, GeminiClient>(client =>
 .AddHttpMessageHandler<GeminiAuthHandler>();
 
 builder.Services.AddHostedService<OldBookingCleanupService>();
-
-// ===== Partner Hotel (inbound, mapping…) =====
 builder.Services.Configure<PartnerHotelOptions>(builder.Configuration.GetSection("PartnerHotel"));
 
 builder.Services.AddHttpClient<IPartnerHotelClient, PartnerHotelClient>((sp, http) =>
@@ -173,22 +146,10 @@ builder.Services.AddScoped<IBookingSyncService, BookingSyncService>();
 builder.Services.AddScoped<IAriSyncService, AriSyncService>();
 builder.Services.AddScoped<INotificationPublisher, NotificationPublisher>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
-
-// 👇 ĐĂNG KÝ PUBLISHER CHO PARTNER (HOTEL)
 builder.Services.AddScoped<IPartnerNotificationPublisher, PartnerNotificationPublisher>();
-
-/* ========================================================================
-   ✅ Outbound Webhook (CÁCH A – No-op sender qua DI)
-   - Bind PartnerWebhook section → PartnerWebhookOptions
-   - Tạo HttpClient "partner-webhook" (baseUrl/timeout theo options)
-   - Đăng ký IPartnerWebhookSender:
-       + Enabled=false  → NoOpPartnerWebhookSender (không gọi ra ngoài)
-       + Enabled=true   → PartnerWebhookSender(AppDbContext, HttpClient, IOptions<PartnerHotelOptions>)
-   ======================================================================== */
 
 builder.Services.Configure<PartnerWebhookOptions>(builder.Configuration.GetSection("PartnerWebhook"));
 
-// HttpClient dùng cho sender thật
 builder.Services.AddHttpClient("partner-webhook", (sp, http) =>
 {
     var opts = sp.GetRequiredService<IOptions<PartnerWebhookOptions>>().Value;
@@ -198,17 +159,11 @@ builder.Services.AddHttpClient("partner-webhook", (sp, http) =>
     http.Timeout = TimeSpan.FromSeconds(timeout);
 });
 
-// ĐĂNG KÝ THEO FLAG
 builder.Services.AddSingleton<IPartnerWebhookSender>(sp =>
 {
     var flag = sp.GetRequiredService<IOptions<PartnerWebhookOptions>>().Value;
-    if (!flag.Enabled)
-    {
-        // 🔕 TẮT webhook → dùng sender rỗng
-        return new NoOpPartnerWebhookSender();
-    }
+    if (!flag.Enabled) return new NoOpPartnerWebhookSender();
 
-    // 🔔 BẬT webhook → dùng sender thật (khớp ctor bạn đang có)
     var db = sp.GetRequiredService<AppDbContext>();
     var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("partner-webhook");
     var partnerHotelOpts = sp.GetRequiredService<IOptions<PartnerHotelOptions>>();
@@ -217,21 +172,21 @@ builder.Services.AddSingleton<IPartnerWebhookSender>(sp =>
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
+// ✅ Đưa Swagger ra ngoài if (IsDevelopment) để chạy trên Server
+app.UseDeveloperExceptionPage();
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseDeveloperExceptionPage();
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "VirtualTravel API V1");
+    c.RoutePrefix = string.Empty; // Truy cập link gốc là ra Swagger ngay
+});
 
-/* ==================== SEED MAPPING ==================== */
 await app.SeedDefaultMockMappingsAsync();
 var seedFolder = Path.Combine(app.Environment.ContentRootPath, "Seed", "Partners");
 await app.SeedAllPartnersFromJsonAsync(seedFolder);
-/* ====================================================== */
 
 app.UseHttpsRedirection();
-app.UseStaticFiles(); // Load wwwroot mặc định
+app.UseStaticFiles();
 
 app.UseStaticFiles(new StaticFileOptions
 {
@@ -245,16 +200,11 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-
-// Hub staff/admin (giữ nguyên)
 app.MapHub<NotificationHub>("/hubs/notifications").RequireCors("Dev");
-
-// ✅ Hub partner/hotel
 app.MapHub<PartnerNotificationHub>("/hubs/partner-notifications").RequireCors("Dev");
 
 app.Run();
 
-/* (tùy chọn) dọn booking cũ */
 public class OldBookingCleanupService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
