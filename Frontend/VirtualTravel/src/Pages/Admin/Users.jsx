@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import Table from "../../components/Admin/Table";
+import Table from "../../Components/Admin/Table";
 import userApi from "../../services/Admin/userApi";
 
 export default function Users() {

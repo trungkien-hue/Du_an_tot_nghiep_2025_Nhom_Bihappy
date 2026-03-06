@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import partnerAdminApi from "../../services/Admin/partnerAdminApi";
 import hotelApi from "../../services/Admin/hotelApi";
-import Table from "../../components/Admin/Table";
+import Table from "../../Components/Admin/Table";
 
 function normalizeUsers(raw) {
   return (raw || []).map(u => ({

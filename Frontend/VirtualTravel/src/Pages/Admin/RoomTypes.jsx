@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import hotelApi from "../../services/Admin/hotelApi";
-import Table from "../../components/Admin/Table";
+import Table from "../../Components/Admin/Table";
 
 // BASE URL backend để load ảnh
 const API_BASE = "https://localhost:7059";

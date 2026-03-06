@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useOutletContext, useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
-import Table from "../../components/Admin/Table";
+import Table from "../../Components/Admin/Table";
 import tourApi from "../../services/Admin/tourApi";
 
 // ===== Helpers resolve/clean ảnh =====

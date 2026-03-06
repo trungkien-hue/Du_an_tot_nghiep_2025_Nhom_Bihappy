@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import reportApi from "../../services/Admin/reportApi";
-import StatCard from "../../components/Admin/StatCard";
+import StatCard from "../../Components/Admin/StatCard";
 import { Users, Hotel, Plane } from "lucide-react";
 
 export default function Dashboard() {
